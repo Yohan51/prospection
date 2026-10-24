@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Carte de prospection</title>
+<meta name="description" content="Portes frappées autour des chantiers : absents à repasser, R1 pris, refus.">
+<meta name="theme-color" content="#1d2730">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prospection">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Carte plein écran ; barre du haut et barre d'actions flottantes ; une feuille qui monte du bas. */
+:root {
+  --ardoise: #1d2730;      /* texte, barres */
+  --ardoise-2: #3a4855;
+  --fond: #f4f6f7;          /* feuilles */
+  --surface: #ffffff;
+  --trait: #d5dbe0;
+  --doux: #5d6b77;          /* texte secondaire */
+  --signal: #f2c230;        /* jaune gilet de chantier : l'action principale */
+  --signal-encre: #1d2730;
+  --st-absent: #e8892b;
+  --st-rappel: #2f7ad6;
+  --st-r1: #2e9a5a;
+  --st-refus: #8a95a0;
+  --st-stop: #b23a3a;
+  --ombre: 0 6px 24px rgba(17, 25, 33, .18);
+  --f-titre: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-texte: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ardoise: #e9eef2; --ardoise-2: #c3ccd4; --fond: #151c22; --surface: #1d262e; --trait: #33404b;
+    --doux: #9aa7b2; --signal-encre: #151c22; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ardoise: #e9eef2; --ardoise-2: #c3ccd4; --fond: #151c22; --surface: #1d262e; --trait: #33404b;
+  --doux: #9aa7b2; --signal-encre: #151c22; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--fond); color: var(--ardoise); font: 16px/1.4 var(--f-texte); -webkit-tap-highlight-color: transparent; overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--st-rappel); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+#carte { position: fixed; inset: 0; background: #dfe5e9; }
+
+/* Barre du haut */
+.haut {
+  position: fixed; z-index: 500; left: 0; right: 0; top: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
+  display: flex; gap: 8px; align-items: flex-start; pointer-events: none;
+}
+.haut > * { pointer-events: auto; }
+.compteur {
+  flex: 1; min-width: 0; background: var(--surface); border-radius: 12px; box-shadow: var(--ombre);
+  padding: 8px 12px; display: flex; flex-direction: column;
+}
+.compteur .t { font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
+.compteur .v { font: 600 17px/1.25 var(--f-texte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.rond {
+  width: 46px; height: 46px; border-radius: 12px; border: 0; background: var(--surface); box-shadow: var(--ombre);
+  display: grid; place-items: center; flex: none;
+}
+.rond svg { width: 22px; height: 22px; }
+.rond.actif { background: var(--ardoise); color: var(--surface); }
+
+/* Bouton de position, à droite */
+.cote { position: fixed; z-index: 500; right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); display: flex; flex-direction: column; gap: 8px; }
+
+/* Barre d'actions */
+.actions {
+  position: fixed; z-index: 500; left: 0; right: 0; bottom: 0;
+  padding: 0 max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(12px, env(safe-area-inset-left, 0px));
+  display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 8px;
+}
+.btn {
+  border: 0; border-radius: 14px; min-height: 60px; padding: 8px 10px; background: var(--surface); box-shadow: var(--ombre);
+  font: 600 15px/1.1 var(--f-titre); letter-spacing: .02em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.btn svg { width: 22px; height: 22px; }
+.btn.principal { background: var(--signal); color: var(--signal-encre); font-size: 19px; }
+.badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--st-absent); color: #fff; font: 700 13px/18px var(--f-texte); font-variant-numeric: tabular-nums; }
+
+/* Feuille du bas */
+.voile { position: fixed; inset: 0; z-index: 900; background: rgba(10, 16, 22, .28); opacity: 0; pointer-events: none; transition: opacity .2s; }
+.voile.ouvert { opacity: 1; pointer-events: auto; }
+.feuille {
+  position: fixed; z-index: 1000; left: 0; right: 0; bottom: 0; max-height: 86%; overflow: auto; overscroll-behavior: contain;
+  background: var(--fond); border-radius: 18px 18px 0 0; box-shadow: var(--ombre);
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 18px) max(16px, env(safe-area-inset-left, 0px));
+  transform: translateY(105%); transition: transform .22s ease-out;
+}
+.feuille.ouverte { transform: none; }
+@media (min-width: 720px) { .feuille { left: 50%; width: 560px; margin-left: -280px; } }
+@media (prefers-reduced-motion: reduce) { .feuille, .voile { transition: none; } }
+.poignee { width: 40px; height: 5px; border-radius: 3px; background: var(--trait); margin: 2px auto 10px; }
+.entete { display: flex; align-items: flex-start; gap: 10px; }
+.entete h2 { flex: 1; min-width: 0; margin: 0; font: 700 24px/1.1 var(--f-titre); text-wrap: balance; }
+.fermer { border: 0; background: var(--surface); width: 38px; height: 38px; border-radius: 10px; flex: none; display: grid; place-items: center; }
+.sous { color: var(--doux); font-size: 14px; margin: 4px 0 0; }
+.pile { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+label.champ { display: flex; flex-direction: column; gap: 4px; font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
+.champ input, .champ textarea, .champ select {
+  font: 500 17px/1.3 var(--f-texte); letter-spacing: 0; text-transform: none; color: var(--ardoise);
+  background: var(--surface); border: 1px solid var(--trait); border-radius: 10px; padding: 11px 12px; width: 100%;
+}
+.champ textarea { min-height: 70px; resize: vertical; }
+
+.statuts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.st {
+  border: 2px solid transparent; border-radius: 12px; min-height: 56px; padding: 8px 12px; background: var(--surface);
+  display: flex; align-items: center; gap: 10px; text-align: left; font: 600 17px/1.15 var(--f-titre);
+}
+.st small { display: block; font: 500 13px/1.2 var(--f-texte); color: var(--doux); }
+.st .pastille { width: 16px; height: 16px; border-radius: 50%; flex: none; }
+.st.courant { border-color: var(--ardoise); }
+.st.large { grid-column: 1 / -1; }
+.pastille.absent, .p-absent { background: var(--st-absent); }
+.pastille.rappel, .p-rappel { background: var(--st-rappel); }
+.pastille.r1, .p-r1 { background: var(--st-r1); }
+.pastille.refus, .p-refus { background: var(--st-refus); }
+.pastille.stop, .p-stop { background: var(--st-stop); }
+
+.ligne-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.b2 { border: 1px solid var(--trait); background: var(--surface); border-radius: 10px; padding: 10px 14px; font: 600 16px/1.1 var(--f-titre); letter-spacing: .02em; text-decoration: none; color: var(--ardoise); display: inline-flex; align-items: center; gap: 6px; }
+.b2.plein { background: var(--ardoise); color: var(--surface); border-color: var(--ardoise); }
+.b2.jaune { background: var(--signal); color: var(--signal-encre); border-color: var(--signal); }
+.b2.danger { color: var(--st-stop); }
+.b2.danger.plein { background: var(--st-stop); color: #fff; border-color: var(--st-stop); }
+.b2[disabled] { opacity: .5; }
+
+.histo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.histo li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
+.histo .pastille { width: 10px; height: 10px; border-radius: 50%; flex: none; transform: translateY(1px); }
+.histo .quand { color: var(--doux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.histo .note { color: var(--ardoise-2); }
+h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
+
+.liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.liste button { width: 100%; text-align: left; border: 0; background: var(--surface); border-radius: 12px; padding: 12px; display: flex; gap: 12px; align-items: center; }
+.liste .txt { flex: 1; min-width: 0; }
+.liste .a { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.liste .m { font-size: 14px; color: var(--doux); display: block; }
+.liste .conseil { font-size: 13px; color: var(--st-absent); display: block; font-weight: 600; }
+.liste .dist { font: 600 15px/1 var(--f-titre); color: var(--doux); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vide { background: var(--surface); border-radius: 12px; padding: 16px; color: var(--doux); font-size: 15px; }
+
+.chiffres { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.chiffres div { background: var(--surface); border-radius: 10px; padding: 8px 6px; text-align: center; }
+.chiffres b { display: block; font: 700 24px/1 var(--f-titre); font-variant-numeric: tabular-nums; }
+.chiffres span { font-size: 12px; color: var(--doux); }
+.puces { display: flex; gap: 6px; flex-wrap: wrap; }
+.puce { border: 1px solid var(--trait); background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 15px/1 var(--f-titre); }
+.puce[aria-pressed="true"] { background: var(--ardoise); color: var(--surface); border-color: var(--ardoise); }
+
+.resultats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.resultats button { width: 100%; text-align: left; border: 0; background: var(--surface); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+.resultats button[aria-pressed="true"] { outline: 2px solid var(--ardoise); }
+
+.toast {
+  position: fixed; z-index: 1100; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 74px); transform: translate(-50%, -20px); opacity: 0;
+  background: var(--ardoise); color: var(--surface); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 15px;
+  max-width: calc(100% - 32px); box-shadow: var(--ombre); transition: opacity .2s, transform .2s; pointer-events: none;
+}
+.toast.vu { opacity: 1; transform: translate(-50%, 0); }
+.toast button { pointer-events: auto; margin-left: 10px; border: 0; background: none; color: var(--signal); font-weight: 700; padding: 0; }
+
+/* Marqueurs */
+.m-porte { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  display: grid; place-items: center; color: #fff; font: 700 11px/1 var(--f-texte); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.m-porte.autre { border-style: dashed; }
+.m-porte.temp { background: var(--signal); color: var(--signal-encre); border-color: var(--ardoise); animation: pulse 1s infinite alternate; }
+@keyframes pulse { to { transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .m-porte.temp { animation: none; } }
+.m-chantier { display: flex; align-items: center; gap: 6px; }
+.m-chantier .toit { width: 34px; height: 34px; border-radius: 9px; background: var(--signal); border: 2px solid #1d2730; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.35); flex: none; }
+.m-chantier .toit svg { width: 20px; height: 20px; }
+.m-chantier .nom { background: #1d2730; color: #fff; font: 600 13px/1 var(--f-titre); letter-spacing: .03em; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
+.zone { stroke: #1d2730; stroke-dasharray: 6 6; stroke-width: 2; fill: #f2c230; fill-opacity: .08; }
+.moi-point { fill: #2f7ad6; stroke: #fff; stroke-width: 3; }
+.moi-precision { fill: #2f7ad6; fill-opacity: .12; stroke: #2f7ad6; stroke-opacity: .4; stroke-width: 1; }
+.leaflet-container { font-family: var(--f-texte); }
+.leaflet-control-attribution { font-size: 10px; }
+.leaflet-bottom.leaflet-right { bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
+.leaflet-control-zoom { display: none; }
+
+.aide-carte {
+  position: fixed; z-index: 450; left: max(12px, env(safe-area-inset-left, 0px)); right: calc(max(12px, env(safe-area-inset-right, 0px)) + 58px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 86px); max-width: 420px; background: var(--surface); border-radius: 12px; box-shadow: var(--ombre); padding: 10px 12px; font-size: 14px; color: var(--ardoise-2);
+}
+</style>
+</head>
+<body>
+<div id="carte" role="application" aria-label="Carte de prospection"></div>
+
+<div class="haut">
+  <button class="compteur" id="b-jour" style="border:0;text-align:left">
+    <span class="t">Aujourd'hui</span>
+    <span class="v" id="jour">0 porte</span>
+  </button>
+  <button class="rond" id="b-couche" aria-label="Vue aérienne" title="Plan / vue aérienne">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 13 10 5 10-5"/></svg>
+  </button>
+  <button class="rond" id="b-menu" aria-label="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+</div>
+
+<div class="cote">
+  <button class="rond" id="b-moi" aria-label="Me localiser">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+  </button>
+</div>
+
+<div class="aide-carte" id="aide" hidden>Touche la carte devant une maison pour noter la porte, ou utilise <b>Porte ici</b> quand tu es devant.</div>
+
+<div class="actions">
+  <button class="btn" id="b-repasser">
+    <span><span class="badge" id="nb-repasser">0</span></span>À repasser
+  </button>
+  <button class="btn principal" id="b-ici">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 21V4h11l3 3v14"/><path d="M3 21h18"/><circle cx="14" cy="13" r="1" fill="currentColor"/></svg>
+    Porte ici
+  </button>
+  <button class="btn" id="b-chantier">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M6 10v10h12V10"/></svg>
+    Chantier
+  </button>
+</div>
+
+<div class="voile" id="voile"></div>
+<section class="feuille" id="feuille" role="dialog" aria-modal="true" aria-labelledby="f-titre"><div class="poignee"></div><div id="f-contenu"></div></section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="f-import" accept="application/json,.json" hidden>
+
+<script src="leaflet.js"></script>
+<script>
+"use strict";
+/* ───────── Réglages ───────── */
+const CLE = 'prospection-chantiers-v1';
+const CENTRE = [48.9566, 4.3631]; // Châlons-en-Champagne
+const GEO = 'https://data.geopf.fr/geocodage';
+const STATUTS = {
+  absent: { nom: 'Absent', aide: 'à repasser' },
+  rappel: { nom: 'Intéressé', aide: 'à rappeler' },
+  r1:     { nom: 'R1 pris', aide: 'rendez-vous calé' },
+  refus:  { nom: 'Pas intéressé', aide: '' },
+  stop:   { nom: 'Ne pas démarcher', aide: 'stop pub, refus net' },
+};
+const RAYONS = [200, 300, 500, 800];
+
+/* ───────── Données ───────── */
+const vide = () => ({ version: 1, moi: '', chantiers: [], portes: [] });
+let etat = charger();
+function charger() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CLE));
+    if (s && s.version === 1 && Array.isArray(s.portes)) return Object.assign(vide(), s);
+  } catch (e) {}
+  return vide();
+}
+function sauver() {
+  try { localStorage.setItem(CLE, JSON.stringify(etat)); }
+  catch (e) { toast("Enregistrement impossible : stockage plein ou navigation privée."); }
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+}
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const maintenant = () => new Date().toISOString();
+const portes = () => etat.portes.filter(p => !p.supprime);
+const chantiers = (avecArchives) => etat.chantiers.filter(c => !c.supprime && (avecArchives || !c.archive));
+const court = p => (p.rue ? `${p.numero ? p.numero + ' ' : ''}${p.rue}` : String(p.adresse || '').replace(/\s+\d{5}\s.*$/, ''));
+const cleAdresse = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/* ───────── Outils ───────── */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function metres(a, b) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * r, dLng = (b[1] - a[1]) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const distTxt = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
+const jourCle = d => new Date(d).toLocaleDateString('fr-CA'); // AAAA-MM-JJ local
+function quand(iso) {
+  const d = new Date(iso), auj = new Date();
+  const h = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+  const j = Math.round((new Date(jourCle(auj)) - new Date(jourCle(d))) / 864e5);
+  if (j === 0) return `aujourd'hui ${h}`;
+  if (j === 1) return `hier ${h}`;
+  if (j < 7) return `${d.toLocaleDateString('fr-FR', { weekday: 'short' })} ${h}`;
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: d.getFullYear() === auj.getFullYear() ? undefined : 'numeric' });
+}
+let minuterieToast;
+function toast(msg, action) {
+  const t = $('#toast');
+  t.textContent = msg;
+  if (action) { const b = document.createElement('button'); b.textContent = action.label; b.onclick = () => { action.fn(); t.classList.remove('vu'); }; t.appendChild(b); }
+  t.classList.add('vu');
+  clearTimeout(minuterieToast);
+  minuterieToast = setTimeout(() => t.classList.remove('vu'), action ? 5000 : 2600);
+}
+async function geo(url, ms = 7000) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+function adresseDe(f) {
+  const p = f.properties || {}, c = f.geometry && f.geometry.coordinates;
+  return {
+    label: p.label || [p.housenumber, p.street || p.name, p.city].filter(Boolean).join(' '),
+    numero: p.housenumber || '', rue: p.street || p.name || '', ville: p.city || '',
+    lat: c ? c[1] : null, lng: c ? c[0] : null,
+  };
+}
+async function adresseInverse(lat, lng) {
+  const j = await geo(`${GEO}/reverse?lat=${lat}&lon=${lng}&index=address&limit=1`);
+  const f = j.features && j.features[0];
+  return f ? adresseDe(f) : null;
+}
+async function rechercherAdresse(q) {
+  const pres = position ? `&lat=${position.lat}&lon=${position.lng}` : `&lat=${CENTRE[0]}&lon=${CENTRE[1]}`;
+  const j = await geo(`${GEO}/search?q=${encodeURIComponent(q)}&limit=6&index=address${pres}`);
+  return (j.features || []).map(adresseDe);
+}
+
+/* ───────── Carte ───────── */
+const carte = L.map('carte', { zoomControl: false, attributionControl: true, tap: true }).setView(CENTRE, 15);
+const plan = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 20, maxNativeZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+});
+const aerien = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM_0_19&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {
+  maxZoom: 20, maxNativeZoom: 19, attribution: '© IGN',
+});
+let vueAerienne = false;
+try { vueAerienne = localStorage.getItem(CLE + ':aerien') === '1'; } catch (e) {}
+(vueAerienne ? aerien : plan).addTo(carte);
+function majCouche() {
+  $('#b-couche').classList.toggle('actif', vueAerienne);
+  $('#b-couche').setAttribute('aria-label', vueAerienne ? 'Revenir au plan' : 'Vue aérienne');
+}
+majCouche();
+$('#b-couche').onclick = () => {
+  vueAerienne = !vueAerienne;
+  carte.removeLayer(vueAerienne ? plan : aerien); (vueAerienne ? aerien : plan).addTo(carte);
+  try { localStorage.setItem(CLE + ':aerien', vueAerienne ? '1' : '0'); } catch (e) {}
+  majCouche();
+  toast(vueAerienne ? 'Vue aérienne : repère les toits moussus' : 'Plan avec numéros de rue');
+};
+
+const calqueZones = L.layerGroup().addTo(carte);
+const calquePortes = L.layerGroup().addTo(carte);
+const calqueChantiers = L.layerGroup().addTo(carte);
+const ICONE_TOIT = '<svg viewBox="0 0 24 24" fill="none" stroke="#1d2730" stroke-width="2.4" stroke-linejoin="round"><path d="M3 12 12 4l9 8"/><path d="M6 11v9h12v-9"/></svg>';
+
+function iconePorte(p) {
+  const autre = p.auteur && etat.moi && cleAdresse(p.auteur) !== cleAdresse(etat.moi);
+  const num = (p.numero || '').slice(0, 4) || '•';
+  return L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+    html: `<div class="m-porte p-${p.statut}${autre ? ' autre' : ''}">${esc(num)}</div>` });
+}
+function dessiner() {
+  calquePortes.clearLayers(); calqueChantiers.clearLayers(); calqueZones.clearLayers();
+  for (const c of chantiers()) {
+    L.circle([c.lat, c.lng], { radius: c.rayon || 300, className: 'zone', interactive: false }).addTo(calqueZones);
+    L.marker([c.lat, c.lng], {
+      icon: L.divIcon({ className: '', iconSize: [34, 34], iconAnchor: [17, 17],
+        html: `<div class="m-chantier"><div class="toit">${ICONE_TOIT}</div><div class="nom">${esc(c.nom)}</div></div>` }),
+      zIndexOffset: 1000, keyboard: true, title: c.nom,
+    }).on('click', () => ouvrirChantier(c.id)).addTo(calqueChantiers);
+  }
+  for (const p of portes()) {
+    L.marker([p.lat, p.lng], { icon: iconePorte(p), keyboard: true, title: court(p) })
+      .on('click', () => ouvrirPorte(p.id)).addTo(calquePortes);
+  }
+  majCompteurs();
+}
+function majCompteurs() {
+  const auj = jourCle(new Date());
+  let n = 0, r1 = 0, ouvertes = 0;
+  for (const p of portes()) for (const v of p.visites) {
+    if (jourCle(v.date) !== auj || (etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi))) continue;
+    n++; if (v.statut === 'r1') r1++; if (v.statut !== 'absent') ouvertes++;
+  }
+  $('#jour').textContent = n === 0 ? 'Aucune porte pour l’instant'
+    : `${n} porte${n > 1 ? 's' : ''} · ${ouvertes} ouverte${ouvertes > 1 ? 's' : ''} · ${r1} R1`;
+  $('#nb-repasser').textContent = aRepasser().length;
+  $('#aide').hidden = portes().length > 0;
+}
+
+/* ───────── Position GPS ───────── */
+let position = null, suivi = null, pointMoi = null, cercleMoi = null, attenteFix = [];
+function demarrerGPS() {
+  if (suivi !== null || !navigator.geolocation) return;
+  suivi = navigator.geolocation.watchPosition(pos => {
+    position = { lat: pos.coords.latitude, lng: pos.coords.longitude, precision: pos.coords.accuracy, t: Date.now() };
+    const ll = [position.lat, position.lng];
+    if (!pointMoi) {
+      cercleMoi = L.circle(ll, { radius: position.precision, className: 'moi-precision', interactive: false }).addTo(carte);
+      pointMoi = L.circleMarker(ll, { radius: 8, className: 'moi-point', interactive: false }).addTo(carte);
+    } else { pointMoi.setLatLng(ll); cercleMoi.setLatLng(ll).setRadius(position.precision); }
+    attenteFix.splice(0).forEach(f => f(position));
+    $('#b-moi').classList.add('actif');
+  }, err => {
+    attenteFix.splice(0).forEach(f => f(null));
+    suivi !== null && navigator.geolocation.clearWatch(suivi); suivi = null;
+    $('#b-moi').classList.remove('actif');
+    toast(err.code === 1 ? 'Position refusée : autorise la localisation pour Safari dans Réglages.' : 'Position GPS indisponible pour le moment.');
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+}
+function positionFraiche(ms = 12000) {
+  demarrerGPS();
+  if (position && Date.now() - position.t < 15000) return Promise.resolve(position);
+  return new Promise(res => { attenteFix.push(res); setTimeout(() => res(position), ms); });
+}
+$('#b-moi').onclick = async () => {
+  const p = await positionFraiche();
+  if (p) carte.flyTo([p.lat, p.lng], Math.max(carte.getZoom(), 18), { duration: .6 });
+};
+
+/* ───────── Feuille ───────── */
+let marqueurTemp = null;
+function ouvrirFeuille(html, apres) {
+  $('#toast').classList.remove('vu');
+  $('#f-contenu').innerHTML = html;
+  $('#feuille').classList.add('ouverte'); $('#voile').classList.add('ouvert');
+  const f = $('#f-contenu .fermer'); if (f) f.onclick = fermerFeuille;
+  apres && apres($('#f-contenu'));
+}
+function fermerFeuille() {
+  $('#feuille').classList.remove('ouverte'); $('#voile').classList.remove('ouvert');
+  if (marqueurTemp) { carte.removeLayer(marqueurTemp); marqueurTemp = null; }
+}
+$('#voile').onclick = fermerFeuille;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerFeuille(); });
+const BTN_FERMER = '<button class="fermer" aria-label="Fermer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+const liensItineraire = (lat, lng) => `<a class="b2" href="https://maps.apple.com/?daddr=${lat},${lng}" target="_blank" rel="noopener">Plans</a><a class="b2" href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>`;
+
+/* ───────── Portes ───────── */
+function chantierProche(lat, lng) {
+  let best = null;
+  for (const c of chantiers()) { const d = metres([lat, lng], [c.lat, c.lng]); if (!best || d < best.d) best = { c, d }; }
+  return best;
+}
+function porteExistante(adr, lat, lng) {
+  const k = cleAdresse(adr && adr.label);
+  return portes().find(p => (k && cleAdresse(p.adresse) === k && adr.numero) || metres([p.lat, p.lng], [lat, lng]) < 6);
+}
+async function nouvellePorteA(lat, lng, origine) {
+  if (marqueurTemp) carte.removeLayer(marqueurTemp);
+  marqueurTemp = L.marker([lat, lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="m-porte temp">?</div>' }), interactive: false }).addTo(carte);
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Recherche de l'adresse…</h2>${BTN_FERMER}</div>`);
+  let adr = null;
+  try { adr = await adresseInverse(lat, lng); } catch (e) { adr = null; }
+  if (!$('#feuille').classList.contains('ouverte')) return;
+  // Se caler sur le point de l'adresse s'il est proche de l'endroit touché
+  let pos = [lat, lng];
+  if (adr && adr.lat != null && metres(pos, [adr.lat, adr.lng]) < (origine === 'gps' ? 45 : 35)) pos = [adr.lat, adr.lng];
+  if (adr && metres([lat, lng], [adr.lat, adr.lng]) > 80) adr = null; // trop loin : sûrement pas cette maison
+  const deja = porteExistante(adr, pos[0], pos[1]);
+  if (deja) { carte.removeLayer(marqueurTemp); marqueurTemp = null; return ouvrirPorte(deja.id); }
+  marqueurTemp.setLatLng(pos);
+  feuillePorte(null, { adr, lat: pos[0], lng: pos[1] });
+}
+function ouvrirPorte(id) {
+  const p = etat.portes.find(x => x.id === id); if (!p) return;
+  if (carte.getZoom() < 17) carte.setView([p.lat, p.lng], 18); else carte.panTo([p.lat, p.lng]);
+  feuillePorte(p);
+}
+function feuillePorte(p, neuf) {
+  const lat = p ? p.lat : neuf.lat, lng = p ? p.lng : neuf.lng;
+  const adresse = p ? p.adresse : (neuf.adr ? neuf.adr.label : '');
+  const ch = chantierProche(lat, lng);
+  const pres = ch && ch.d < 2000 ? `Chantier ${esc(ch.c.nom)} à ${distTxt(ch.d)}` : 'Aucun chantier à proximité';
+  const histo = p ? [...p.visites].reverse().map(v => `<li><span class="pastille ${v.statut}"></span><span><b>${esc(STATUTS[v.statut].nom)}</b> <span class="quand">· ${esc(quand(v.date))}${v.auteur && cleAdresse(v.auteur) !== cleAdresse(etat.moi) ? ' · ' + esc(v.auteur) : ''}</span>${v.note ? `<br><span class="note">${esc(v.note)}</span>` : ''}</span></li>`).join('') : '';
+  const boutons = Object.entries(STATUTS).map(([k, s]) =>
+    `<button class="st${p && p.statut === k ? ' courant' : ''}${k === 'stop' ? ' large' : ''}" data-st="${k}"><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? `<small>${esc(s.aide)}</small>` : ''}</span></button>`).join('');
+  ouvrirFeuille(`
+    <div class="entete"><h2 id="f-titre">${p ? esc(court(p)) : 'Nouvelle porte'}</h2>${BTN_FERMER}</div>
+    <p class="sous">${p && p.ville ? esc(p.ville) + ' · ' : ''}${pres}${p ? ` · ${p.visites.length} passage${p.visites.length > 1 ? 's' : ''}` : ''}</p>
+    <div class="pile">
+      ${p ? '' : `<label class="champ">Adresse<input id="i-adr" value="${esc(adresse)}" placeholder="N° et rue" autocomplete="off"></label>
+        ${neuf.adr ? '' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
+      <label class="champ">Note <span style="text-transform:none;letter-spacing:0;font-weight:500">(facultatif, avant de choisir)</span><input id="i-note" placeholder="ex. toit moussu, revenir le soir" autocomplete="off"></label>
+      <div class="statuts">${boutons}</div>
+      ${p ? `<h3>Passages</h3><ul class="histo">${histo}</ul>` : ''}
+      <div class="ligne-btns">${liensItineraire(lat, lng)}${p ? '<button class="b2 danger" id="b-suppr">Supprimer</button>' : ''}</div>
+    </div>`, f => {
+    f.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+      const statut = b.dataset.st, note = f.querySelector('#i-note').value.trim();
+      if (p) {
+        ajouterVisite(p, statut, note);
+      } else {
+        const a = f.querySelector('#i-adr').value.trim();
+        const memeAdr = neuf.adr && cleAdresse(a) === cleAdresse(neuf.adr.label);
+        const np = {
+          id: uid(), adresse: a || 'Adresse inconnue', numero: memeAdr ? neuf.adr.numero : ((a.match(/^\s*(\d+\s?(bis|ter|[a-d])?)\b/i) || [])[1] || ''),
+          rue: memeAdr ? neuf.adr.rue : '', ville: memeAdr ? neuf.adr.ville : '',
+          lat, lng, statut, visites: [], auteur: etat.moi, cree: maintenant(), maj: maintenant(),
+        };
+        etat.portes.push(np);
+        ajouterVisite(np, statut, note);
+      }
+    });
+    const s = f.querySelector('#b-suppr');
+    if (s) s.onclick = () => {
+      if (s.dataset.ok) { p.supprime = true; p.maj = maintenant(); sauver(); dessiner(); fermerFeuille(); toast('Porte supprimée'); }
+      else { s.dataset.ok = 1; s.textContent = 'Confirmer la suppression'; s.classList.add('plein'); }
+    };
+  });
+}
+function ajouterVisite(p, statut, note) {
+  p.visites.push({ date: maintenant(), statut, note: note || '', auteur: etat.moi });
+  p.statut = statut; p.maj = maintenant();
+  if (marqueurTemp) { carte.removeLayer(marqueurTemp); marqueurTemp = null; }
+  sauver(); dessiner(); fermerFeuille();
+  toast(`${STATUTS[statut].nom} · ${court(p)}`, {
+    label: 'Annuler', fn: () => {
+      p.visites.pop();
+      if (p.visites.length) { p.statut = p.visites[p.visites.length - 1].statut; } else { p.supprime = true; }
+      p.maj = maintenant(); sauver(); dessiner();
+    },
+  });
+}
+carte.on('click', e => nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte'));
+$('#b-ici').onclick = async () => {
+  toast('Recherche de ta position…');
+  const pos = await positionFraiche();
+  if (!pos) return toast('Pas de position GPS : touche la maison sur la carte.');
+  if (pos.precision > 60) toast(`GPS imprécis (±${Math.round(pos.precision)} m) : vérifie l'adresse.`);
+  carte.setView([pos.lat, pos.lng], Math.max(carte.getZoom(), 18));
+  nouvellePorteA(pos.lat, pos.lng, 'gps');
+};
+
+/* ───────── À repasser ───────── */
+function aRepasser() {
+  return portes().filter(p => p.statut === 'absent' || p.statut === 'rappel');
+}
+function conseilHoraire(p) {
+  if (p.statut !== 'absent') return '';
+  const abs = p.visites.filter(v => v.statut === 'absent');
+  const heures = abs.map(v => new Date(v.date).getHours());
+  const jours = abs.map(v => new Date(v.date).getDay());
+  if (abs.length >= 1 && heures.every(h => h < 17) && !jours.includes(6)) return 'Toujours absent en journée : tente après 17h ou un samedi';
+  if (abs.length >= 3) return `${abs.length} passages sans réponse : boîte aux lettres ?`;
+  return '';
+}
+$('#b-repasser').onclick = () => {
+  const ref = position ? [position.lat, position.lng] : [carte.getCenter().lat, carte.getCenter().lng];
+  const liste = aRepasser().map(p => ({ p, d: metres(ref, [p.lat, p.lng]) })).sort((a, b) =>
+    (a.p.statut === 'rappel' ? 0 : 1) - (b.p.statut === 'rappel' ? 0 : 1) || a.d - b.d);
+  const item = ({ p, d }) => {
+    const der = p.visites[p.visites.length - 1];
+    const nbAbs = p.visites.filter(v => v.statut === 'absent').length;
+    const c = conseilHoraire(p);
+    return `<li><button data-id="${p.id}"><span class="pastille ${p.statut}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>
+      <span class="txt"><span class="a">${esc(court(p))}</span>
+      <span class="m">${p.statut === 'rappel' ? 'Intéressé, à rappeler' : `Absent${nbAbs > 1 ? ' ×' + nbAbs : ''}`} · ${esc(quand(der.date))}${der.note ? ' · ' + esc(der.note) : ''}</span>
+      ${c ? `<span class="conseil">${esc(c)}</span>` : ''}</span>
+      <span class="dist">${distTxt(d)}</span></button></li>`;
+  };
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">À repasser</h2>${BTN_FERMER}</div>
+    <p class="sous">${position ? 'Les plus proches de toi d’abord' : 'Les plus proches du centre de la carte'} ; les intéressés en tête.</p>
+    <div class="pile">${liste.length ? `<ul class="liste">${liste.map(item).join('')}</ul>` : '<div class="vide">Rien à repasser. Les portes notées « Absent » ou « Intéressé » apparaîtront ici.</div>'}</div>`,
+    f => f.querySelectorAll('[data-id]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.id)));
+};
+
+/* ───────── Chantiers ───────── */
+$('#b-chantier').onclick = () => feuilleNouveauChantier();
+function feuilleNouveauChantier() {
+  let choix = null, rayon = 300, delai;
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Nouveau chantier</h2>${BTN_FERMER}</div>
+    <p class="sous">La zone autour du chantier s'affiche sur la carte : ce sont les rues à prospecter.</p>
+    <div class="pile">
+      <label class="champ">Adresse du chantier<input id="i-cadr" placeholder="ex. 8 rue de Vinetz, Châlons" autocomplete="off"></label>
+      <button class="b2" id="b-cici" style="align-self:flex-start">Je suis sur le chantier</button>
+      <ul class="resultats" id="res"></ul>
+      <label class="champ">Nom<input id="i-cnom" placeholder="ex. Martin – vapeur + hydrofuge" autocomplete="off"></label>
+      <div class="champ" style="gap:8px">Zone à prospecter<div class="puces" id="rayons">${RAYONS.map(r => `<button class="puce" data-r="${r}" aria-pressed="${r === rayon}">${r} m</button>`).join('')}</div></div>
+      <button class="b2 jaune" id="b-ccreer" disabled style="justify-content:center;min-height:52px">Créer le chantier</button>
+    </div>`, f => {
+    const res = f.querySelector('#res'), btn = f.querySelector('#b-ccreer'), nom = f.querySelector('#i-cnom');
+    const choisir = (a) => {
+      choix = a; btn.disabled = false;
+      if (!nom.value) nom.value = a.rue ? `${a.numero ? a.numero + ' ' : ''}${a.rue}` : a.label;
+      res.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.lbl === a.label));
+      carte.setView([a.lat, a.lng], 16);
+    };
+    const afficher = (liste) => {
+      res.innerHTML = liste.map((a, i) => `<li><button data-i="${i}" data-lbl="${esc(a.label)}">${esc(a.label)}</button></li>`).join('');
+      res.querySelectorAll('button').forEach(b => b.onclick = () => choisir(liste[+b.dataset.i]));
+    };
+    f.querySelector('#i-cadr').oninput = e => {
+      clearTimeout(delai); const q = e.target.value.trim();
+      if (q.length < 4) { res.innerHTML = ''; return; }
+      delai = setTimeout(async () => {
+        try { afficher(await rechercherAdresse(q)); }
+        catch (err) { res.innerHTML = '<li class="vide">Recherche d’adresse indisponible (réseau ?). Utilise « Je suis sur le chantier ».</li>'; }
+      }, 300);
+    };
+    f.querySelector('#b-cici').onclick = async () => {
+      const pos = await positionFraiche();
+      if (!pos) return toast('Pas de position GPS.');
+      let a = null; try { a = await adresseInverse(pos.lat, pos.lng); } catch (e) {}
+      const choixGps = a ? Object.assign(a, { lat: pos.lat, lng: pos.lng }) : { label: 'Ma position', numero: '', rue: '', ville: '', lat: pos.lat, lng: pos.lng };
+      afficher([choixGps]); choisir(choixGps);
+    };
+    f.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+      rayon = +b.dataset.r; f.querySelectorAll('[data-r]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    });
+    btn.onclick = () => {
+      if (!choix) return;
+      const c = { id: uid(), nom: nom.value.trim() || choix.label, adresse: choix.label, lat: choix.lat, lng: choix.lng, rayon, archive: false, auteur: etat.moi, cree: maintenant(), maj: maintenant() };
+      etat.chantiers.push(c); sauver(); dessiner(); fermerFeuille();
+      carte.fitBounds(L.latLng(c.lat, c.lng).toBounds(c.rayon * 2.3));
+      toast(`Chantier ${c.nom} ajouté`);
+    };
+  });
+}
+function statsZone(c) {
+  const dedans = portes().filter(p => metres([c.lat, c.lng], [p.lat, p.lng]) <= (c.rayon || 300));
+  const n = k => dedans.filter(p => p.statut === k).length;
+  return { total: dedans.length, absent: n('absent'), rappel: n('rappel'), r1: n('r1'), refus: n('refus') + n('stop') };
+}
+function ouvrirChantier(id) {
+  const c = etat.chantiers.find(x => x.id === id); if (!c) return;
+  const s = statsZone(c), ouvertes = s.total - s.absent;
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${esc(c.nom)}</h2>${BTN_FERMER}</div>
+    <p class="sous">${esc(c.adresse)} · zone de ${c.rayon} m${c.archive ? ' · archivé' : ''}</p>
+    <div class="pile">
+      <div class="chiffres">
+        <div><b>${s.total}</b><span>portes</span></div>
+        <div><b>${s.absent}</b><span>à repasser</span></div>
+        <div><b>${s.rappel}</b><span>intéressés</span></div>
+        <div><b>${s.r1}</b><span>R1 pris</span></div>
+      </div>
+      <p class="sous" style="margin:0">${ouvertes ? `${s.r1} R1 sur ${ouvertes} porte${ouvertes > 1 ? 's' : ''} ouverte${ouvertes > 1 ? 's' : ''} (${Math.round(100 * s.r1 / ouvertes)} %)` : 'Aucune porte ouverte dans la zone pour l’instant.'}</p>
+      <div class="champ" style="gap:8px">Zone à prospecter<div class="puces">${RAYONS.map(r => `<button class="puce" data-r="${r}" aria-pressed="${r === c.rayon}">${r} m</button>`).join('')}</div></div>
+      <div class="ligne-btns">${liensItineraire(c.lat, c.lng)}
+        <button class="b2" id="b-arch">${c.archive ? 'Réactiver' : 'Chantier terminé'}</button>
+        <button class="b2 danger" id="b-csuppr">Supprimer</button></div>
+    </div>`, f => {
+    f.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { c.rayon = +b.dataset.r; c.maj = maintenant(); sauver(); dessiner(); ouvrirChantier(c.id); });
+    f.querySelector('#b-arch').onclick = () => {
+      c.archive = !c.archive; c.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
+      toast(c.archive ? 'Chantier masqué de la carte (les portes restent)' : 'Chantier réaffiché');
+    };
+    const s2 = f.querySelector('#b-csuppr');
+    s2.onclick = () => {
+      if (s2.dataset.ok) { c.supprime = true; c.maj = maintenant(); sauver(); dessiner(); fermerFeuille(); toast('Chantier supprimé (les portes restent)'); }
+      else { s2.dataset.ok = 1; s2.textContent = 'Confirmer'; s2.classList.add('plein'); }
+    };
+  });
+  carte.fitBounds(L.latLng(c.lat, c.lng).toBounds((c.rayon || 300) * 2.3), { paddingBottomRight: [0, 260] });
+}
+
+/* ───────── Menu : prénom, partage, sauvegarde ───────── */
+$('#b-jour').onclick = () => $('#b-menu').onclick();
+$('#b-menu').onclick = () => {
+  const ps = portes(), tot = k => ps.filter(p => p.statut === k).length;
+  const archives = chantiers(true).filter(c => c.archive);
+  const derniere = etat.dernierExport ? quand(etat.dernierExport) : 'jamais';
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Prospection</h2>${BTN_FERMER}</div>
+    <div class="pile">
+      <div class="chiffres">
+        <div><b>${ps.length}</b><span>portes</span></div>
+        <div><b>${tot('absent')}</b><span>absents</span></div>
+        <div><b>${tot('rappel')}</b><span>intéressés</span></div>
+        <div><b>${tot('r1')}</b><span>R1 pris</span></div>
+      </div>
+      <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
+      <h3>Partager avec ton collègue</h3>
+      <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
+      <div class="ligne-btns"><button class="b2 plein" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
+      <p class="sous" style="margin:0">Dernier envoi : ${esc(derniere)}. C'est aussi ta sauvegarde : fais-le au moins une fois par semaine.</p>
+      ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const s = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${s.total} porte${s.total > 1 ? 's' : ''} · ${s.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
+      ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
+      <h3>Légende</h3>
+      <ul class="histo">${Object.entries(STATUTS).map(([k, s]) => `<li><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? ` <span class="quand">· ${esc(s.aide)}</span>` : ''}</span></li>`).join('')}</ul>
+      <div class="ligne-btns"><button class="b2 danger" id="b-raz">Tout effacer</button></div>
+    </div>`, f => {
+    f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
+    f.querySelector('#b-export').onclick = exporter;
+    f.querySelector('#b-import').onclick = () => $('#f-import').click();
+    f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
+    const r = f.querySelector('#b-raz');
+    r.onclick = () => {
+      if (r.dataset.ok) { const moi = etat.moi; etat = vide(); etat.moi = moi; sauver(); dessiner(); fermerFeuille(); toast('Tout est effacé'); }
+      else { r.dataset.ok = 1; r.textContent = 'Effacer toutes les portes et chantiers ?'; r.classList.add('plein'); }
+    };
+  });
+};
+async function exporter() {
+  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes });
+  const nom = `prospection-${cleAdresse(etat.moi || 'moi').replace(/ /g, '-')}-${jourCle(new Date())}.json`;
+  const fichier = new File([json], nom, { type: 'application/json' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
+      await navigator.share({ files: [fichier], title: 'Portes de prospection' });
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(fichier); a.download = nom;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    }
+    etat.dernierExport = maintenant(); sauver();
+  } catch (e) { if (e.name !== 'AbortError') toast('Envoi impossible : ' + e.message); }
+}
+$('#f-import').onchange = async e => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  try {
+    const src = JSON.parse(await file.text());
+    if (src.app !== 'carte-prospection' || !Array.isArray(src.portes)) throw new Error('ce fichier ne vient pas de la carte de prospection');
+    const r = fusionner(src);
+    sauver(); dessiner(); fermerFeuille();
+    toast(`Import${src.par ? ' de ' + src.par : ''} : ${r.ajouts} ajout${r.ajouts > 1 ? 's' : ''}, ${r.majs} mise${r.majs > 1 ? 's' : ''} à jour`);
+  } catch (err) { toast('Import impossible : ' + err.message); }
+};
+function fusionner(src) {
+  let ajouts = 0, majs = 0;
+  const cleVisite = v => `${v.date}|${cleAdresse(v.auteur)}|${v.statut}`;
+  // Chantiers : le plus récemment modifié gagne
+  for (const c of src.chantiers || []) {
+    const loc = etat.chantiers.find(x => x.id === c.id);
+    if (!loc) { etat.chantiers.push(c); if (!c.supprime) ajouts++; }
+    else if (c.maj > loc.maj) { Object.assign(loc, c); majs++; }
+  }
+  // Portes : même id, ou même adresse précise → on réunit les passages des deux
+  for (const p of src.portes || []) {
+    let loc = etat.portes.find(x => x.id === p.id);
+    if (!loc && p.numero && !p.supprime) loc = etat.portes.find(x => !x.supprime && x.numero && cleAdresse(x.adresse) === cleAdresse(p.adresse));
+    if (!loc) { etat.portes.push(JSON.parse(JSON.stringify(p))); if (!p.supprime) ajouts++; continue; }
+    const avant = loc.visites.length, etaitSupprime = !!loc.supprime;
+    const vus = new Set(loc.visites.map(cleVisite));
+    for (const v of p.visites || []) if (!vus.has(cleVisite(v))) loc.visites.push(v);
+    loc.visites.sort((a, b) => a.date < b.date ? -1 : 1);
+    if (loc.visites.length) loc.statut = loc.visites[loc.visites.length - 1].statut;
+    if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
+    if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime) majs++;
+  }
+  return { ajouts, majs };
+}
+
+/* ───────── Démarrage ───────── */
+dessiner();
+if (portes().length || chantiers().length) {
+  const pts = [...portes().map(p => [p.lat, p.lng]), ...chantiers().map(c => [c.lat, c.lng])];
+  carte.fitBounds(pts, { maxZoom: 17, padding: [40, 40] });
+}
+if (!etat.moi) {
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Bienvenue</h2>${BTN_FERMER}</div>
+    <div class="pile">
+      <p style="margin:0">Note chaque porte frappée autour de tes chantiers : la carte garde les absents à repasser, les intéressés et les R1 pris, pour ne jamais refrapper deux fois au même endroit.</p>
+      <label class="champ">Ton prénom<input id="i-moi0" placeholder="ex. Yohan" autocomplete="given-name"></label>
+      <button class="b2 jaune" id="b-go" style="justify-content:center;min-height:52px">Commencer</button>
+      <p class="sous" style="margin:0">Tes données restent sur ce téléphone. Ouvre toujours l'appli depuis son icône sur l'écran d'accueil.</p>
+    </div>`, f => {
+    f.querySelector('#b-go').onclick = () => {
+      etat.moi = f.querySelector('#i-moi0').value.trim(); sauver(); dessiner(); fermerFeuille(); demarrerGPS();
+    };
+  });
+} else {
+  demarrerGPS();
+}
+</script>
+</body>
+</html>
