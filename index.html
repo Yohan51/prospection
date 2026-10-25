@@ -678,13 +678,31 @@ function fabriquerIcs(p) {
   return lignes.map(icsPlier).join('\r\n') + '\r\n';
 }
 window.ouvrirUrl = u => { location.href = u; };
+const NOM_RACCOURCI = 'Ajouter R1';
+function isoAvecFuseau(d) {
+  const o = -d.getTimezoneOffset(), s = o >= 0 ? '+' : '-', a = Math.abs(o);
+  return `${isoLocal(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${s}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+}
+function donneesRaccourci(p) {
+  const r = p.r1, debut = dateR1(r), fin = new Date(+debut + (r.duree || 60) * 60000);
+  const ch = chantierProche(p.lat, p.lng);
+  return {
+    titre: `R1 – ${r.nom || 'client'} – ${court(p)}`,
+    debut: isoAvecFuseau(debut),
+    fin: isoAvecFuseau(fin),
+    lieu: p.adresse,
+    notes: [r.tel && `Tél. : ${r.tel}`, r.besoin && `Besoin : ${r.besoin}`,
+      `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`,
+      `Plans : https://maps.apple.com/?daddr=${p.lat},${p.lng}`].filter(Boolean).join('\n'),
+  };
+}
 async function ajouterAuCalendrier(p) {
   const ics = fabriquerIcs(p);
   const nom = `R1-${cleAdresse(p.r1.nom || court(p)).replace(/ /g, '-').slice(0, 40) || 'client'}.ics`;
-  // iPhone : ouvrir le .ics affiche directement « Ajouter au calendrier »
+  // iPhone : iOS interdit à une appli web d'ouvrir un fichier calendrier.
+  // On passe par l'appli Raccourcis : le raccourci « Ajouter R1 » crée l'évènement.
   if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-    ouvrirUrl('data:text/calendar;charset=utf-8,' + encodeURIComponent(ics));
-    toast('Si le calendrier ne s’ouvre pas : bouton « Envoyer » sur la fiche', null);
+    ouvrirUrl('shortcuts://run-shortcut?name=' + encodeURIComponent(NOM_RACCOURCI) + '&input=text&text=' + encodeURIComponent(JSON.stringify(donneesRaccourci(p))));
     return;
   }
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
@@ -705,7 +723,7 @@ function carteR1(p) {
   return `<div class="carte-r1"><span class="quand-r1">${passe ? 'R1 passé : ' : 'R1 '}${esc(texteR1(r))}</span>
     <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>
     <div class="ligne-btns">${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
-      <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer</button></div></div>`;
+      <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer le .ics</button></div></div>`;
 }
 function r1AVenir() {
   return portes().filter(p => p.r1 && p.r1.date && dateR1(p.r1) > new Date(Date.now() - 3 * 3600e3))
@@ -1001,6 +1019,8 @@ $('#b-menu').onclick = () => {
       <p class="sous" style="margin:0">Dernier envoi : ${esc(derniere)}. C'est aussi ta sauvegarde : fais-le au moins une fois par semaine.</p>
       ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const s = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${s.total} porte${s.total > 1 ? 's' : ''} · ${s.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
       ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
+      <h3>Calendrier de l'iPhone</h3>
+      <p class="sous" style="margin:0">Les R1 passent par l'appli Raccourcis : crée une fois le raccourci « ${NOM_RACCOURCI} » (2 actions, voir le mode d'emploi). Ensuite, « Ajouter au calendrier » inscrit le rendez-vous en une touche.</p>
       <h3>Légende</h3>
       <ul class="histo">${Object.entries(STATUTS).map(([k, s]) => `<li><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? ` <span class="quand">· ${esc(s.aide)}</span>` : ''}</span></li>`).join('')}</ul>
       <div class="ligne-btns"><button class="b2 danger" id="b-raz">Tout effacer</button></div>
