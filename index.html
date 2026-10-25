@@ -683,13 +683,15 @@ function isoAvecFuseau(d) {
   const o = -d.getTimezoneOffset(), s = o >= 0 ? '+' : '-', a = Math.abs(o);
   return `${isoLocal(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${s}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
+// Format lu par Raccourcis sur un iPhone en français : « 26/10/2026 18:00 »
+const dateRaccourci = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 function donneesRaccourci(p) {
   const r = p.r1, debut = dateR1(r), fin = new Date(+debut + (r.duree || 60) * 60000);
   const ch = chantierProche(p.lat, p.lng);
   return {
     titre: `R1 – ${r.nom || 'client'} – ${court(p)}`,
-    debut: isoAvecFuseau(debut),
-    fin: isoAvecFuseau(fin),
+    debut: dateRaccourci(debut),
+    fin: dateRaccourci(fin),
     lieu: p.adresse,
     notes: [r.tel && `Tél. : ${r.tel}`, r.besoin && `Besoin : ${r.besoin}`,
       `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`,
