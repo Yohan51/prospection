@@ -113,7 +113,7 @@ button { cursor: pointer; }
 .fermer { border: 0; background: var(--surface); width: 38px; height: 38px; border-radius: 10px; flex: none; display: grid; place-items: center; }
 .sous { color: var(--doux); font-size: 14px; margin: 4px 0 0; }
 .pile { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-label.champ { display: flex; flex-direction: column; gap: 4px; font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
+label.champ, div.champ { display: flex; flex-direction: column; gap: 4px; font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
 .champ input, .champ textarea, .champ select {
   font: 500 17px/1.3 var(--f-texte); letter-spacing: 0; text-transform: none; color: var(--ardoise);
   background: var(--surface); border: 1px solid var(--trait); border-radius: 10px; padding: 11px 12px; width: 100%;
@@ -167,6 +167,59 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .puce { border: 1px solid var(--trait); background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 15px/1 var(--f-titre); }
 .puce[aria-pressed="true"] { background: var(--ardoise); color: var(--surface); border-color: var(--ardoise); }
 
+/* Suivi après R1, rappels */
+.carte-suivi, .carte-rappel, .carte-rue { background: var(--surface); border: 1px solid var(--trait); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.carte-rappel { background: color-mix(in srgb, var(--st-rappel) 10%, var(--surface)); border-color: color-mix(in srgb, var(--st-rappel) 40%, transparent); }
+.carte-rappel .quand-r1 { font: 700 19px/1.15 var(--f-titre); }
+.carte-rappel .retard { color: var(--st-stop); }
+.frise { display: flex; align-items: center; gap: 0; }
+.frise i { flex: 1; height: 2px; background: var(--trait); min-width: 8px; }
+.frise .etape { font: 600 14px/1 var(--f-titre); padding: 6px 9px; border-radius: 999px; border: 1px solid var(--trait); color: var(--doux); white-space: nowrap; }
+.frise .etape.faite { background: color-mix(in srgb, var(--st-r1) 16%, var(--surface)); border-color: color-mix(in srgb, var(--st-r1) 50%, transparent); color: var(--ardoise); }
+.frise .etape.courante { background: var(--st-r1); border-color: var(--st-r1); color: #fff; }
+.frise.perdu .etape.courante { background: var(--st-stop); border-color: var(--st-stop); }
+.suivi-titre { font: 700 19px/1.15 var(--f-titre); }
+.suivi-titre small { font: 500 14px/1.3 var(--f-texte); color: var(--doux); display: block; }
+.alerte { color: var(--st-absent); font-weight: 600; font-size: 14px; }
+.b2.vert { background: var(--st-r1); color: #fff; border-color: var(--st-r1); }
+.lien { border: 0; background: none; padding: 0; color: var(--doux); font-size: 14px; text-decoration: underline; align-self: flex-start; }
+.m-porte.signe { background: #17663a; border-color: var(--signal); }
+.menu-btn { position: relative; }
+.menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
+
+/* Secteurs */
+.secteur { stroke-opacity: .5; fill-opacity: .4; }
+.s-signe { stroke: #17663a; fill: #17663a; stroke-opacity: .65; }
+.s-r1 { stroke: var(--st-r1); fill: var(--st-r1); }
+.s-rappel { stroke: var(--st-rappel); fill: var(--st-rappel); }
+.s-rien { stroke: var(--st-refus); fill: var(--st-refus); }
+.s-refaire { stroke: var(--signal); fill: var(--signal); stroke-opacity: .9; fill-opacity: .8; }
+.secteur.terminee { stroke-dasharray: 1 24; stroke-opacity: .85; }
+.legende-secteurs {
+  position: fixed; z-index: 450; left: max(12px, env(safe-area-inset-left, 0px)); right: calc(max(12px, env(safe-area-inset-right, 0px)) + 58px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 86px); max-width: 360px; background: var(--surface); border-radius: 12px; box-shadow: var(--ombre); padding: 8px 12px;
+  font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
+}
+.legende-secteurs b { width: 100%; font: 600 13px/1.2 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); }
+.legende-secteurs i { display: inline-block; width: 18px; height: 6px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+body.en-tournee .legende-secteurs { display: none; }
+body.secteurs .leaflet-marker-pane { opacity: .45; }
+body.secteurs .leaflet-marker-icon { pointer-events: none; }
+
+/* Photos */
+.photos { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.vignette { flex: none; width: 76px; height: 76px; border-radius: 10px; border: 0; padding: 0; overflow: hidden; background: var(--surface); }
+.vignette img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vignette.ajout { border: 1px dashed var(--doux); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font: 600 13px/1 var(--f-titre); color: var(--ardoise-2); }
+.vignette.ajout svg { width: 24px; height: 24px; }
+.visionneuse { position: fixed; inset: 0; z-index: 1200; background: #000; display: flex; flex-direction: column; }
+.visionneuse img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+.v-barre { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(12px, env(safe-area-inset-left, 0px)); color: #fff; }
+.v-barre span { flex: 1 1 100%; font-size: 14px; color: #cfd6dc; }
+.v-barre button { border: 1px solid #44515c; background: #1d2730; color: #fff; border-radius: 10px; padding: 10px 14px; font: 600 16px/1 var(--f-titre); }
+.v-barre button.danger { color: #ff8a80; }
+.v-barre button.danger.plein { background: var(--st-stop); color: #fff; }
+
 /* Bilan détaillé (menu) */
 .bilan { display: flex; flex-direction: column; gap: 12px; }
 .bilan .chiffres span { line-height: 1.15; display: block; margin-top: 3px; }
@@ -185,8 +238,14 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .tableau td { padding: 7px 8px; text-align: right; border-top: 1px solid var(--trait); }
 .tableau th:first-child, .tableau td:first-child { text-align: left; }
 .tableau td:first-child { max-width: 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tableau td small { display: block; color: var(--doux); font-size: 12px; }
+.tableau td small { display: block; color: var(--doux); font-size: 12px; white-space: normal; }
 .tableau td.r1 { color: var(--st-r1); font-weight: 700; }
+.tableau tr[data-rue] { cursor: pointer; }
+.entonnoir { background: var(--surface); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
+.entonnoir div { display: grid; grid-template-columns: 96px 1fr 34px; gap: 8px; align-items: center; }
+.entonnoir em { font-style: normal; height: 10px; border-radius: 5px; background: var(--st-r1); min-width: 3px; display: block; }
+.entonnoir em.perdu { background: var(--st-stop); }
+.entonnoir b { text-align: right; font-variant-numeric: tabular-nums; }
 .journal-jour { font: 600 13px/1 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); margin: 6px 0 -2px; }
 .journal { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .journal button { width: 100%; border: 0; background: var(--surface); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: 44px 10px 1fr; gap: 8px; align-items: baseline; text-align: left; font-size: 14px; }
@@ -281,17 +340,25 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
   <button class="rond" id="b-couche" aria-label="Vue aérienne" title="Plan / vue aérienne">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 13 10 5 10-5"/></svg>
   </button>
-  <button class="rond" id="b-menu" aria-label="Menu">
+  <button class="rond menu-btn" id="b-menu" aria-label="Menu">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <span class="badge" id="nb-menu" hidden>0</span>
   </button>
 </div>
 
 <div class="cote">
+  <button class="rond" id="b-secteurs" aria-label="Afficher les secteurs" title="Secteurs : ce que chaque rue a donné">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 9 4M20 20 15 4"/><path d="M12 6v2M12 11v2M12 16v2"/></svg>
+  </button>
   <button class="rond" id="b-moi" aria-label="Me localiser">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
   </button>
 </div>
 
+<div class="legende-secteurs" id="legende-secteurs" hidden><b>Secteurs · touche une rue</b>
+  <span><i class="s-leg" style="background:#17663a"></i>Signé</span><span><i style="background:var(--st-r1)"></i>R1</span>
+  <span><i style="background:var(--st-rappel)"></i>Intéressés</span><span><i style="background:var(--st-refus)"></i>Rien</span>
+  <span><i style="background:var(--signal)"></i>À refaire</span><span>· · · terminée</span></div>
 <div class="aide-carte" id="aide" hidden>Touche la carte devant une maison pour noter la porte, ou utilise <b>Porte ici</b> quand tu es devant.</div>
 
 <div class="actions">
@@ -314,6 +381,11 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
 <section class="feuille" id="feuille" role="dialog" aria-modal="true" aria-labelledby="f-titre"><div class="poignee"></div><div id="f-contenu"></div></section>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="f-import" accept="application/json,.json" hidden>
+<input type="file" id="f-photo" accept="image/*" capture="environment" hidden>
+<input type="file" id="f-photo-lib" accept="image/*" multiple hidden>
+<div class="visionneuse" id="visionneuse" hidden role="dialog" aria-label="Photo"><img id="v-img" alt="Photo de la maison">
+  <div class="v-barre"><span id="v-info"></span><button id="v-prec" aria-label="Photo précédente">‹</button><button id="v-suiv" aria-label="Photo suivante">›</button>
+    <button id="v-partager">Partager</button><button class="danger" id="v-suppr">Supprimer</button><button id="v-fermer">Fermer</button></div></div>
 
 <script src="leaflet.js"></script>
 <script>
@@ -332,7 +404,7 @@ const STATUTS = {
 const RAYONS = [200, 300, 500, 800];
 
 /* ───────── Données ───────── */
-const vide = () => ({ version: 1, moi: '', chantiers: [], portes: [] });
+const vide = () => ({ version: 1, moi: '', chantiers: [], portes: [], rues: {} });
 let etat = charger();
 function charger() {
   try {
@@ -439,7 +511,7 @@ function iconePorte(p) {
   const autre = p.auteur && etat.moi && cleAdresse(p.auteur) !== cleAdresse(etat.moi);
   const num = (p.numero || '').slice(0, 4) || '•';
   return L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13],
-    html: `<div class="m-porte p-${p.statut}${autre ? ' autre' : ''}">${esc(num)}</div>` });
+    html: `<div class="m-porte p-${p.statut}${autre ? ' autre' : ''}${etapeDe(p) === 'signe' ? ' signe' : ''}">${esc(num)}</div>` });
 }
 function dessiner() {
   calquePortes.clearLayers(); calqueChantiers.clearLayers(); calqueZones.clearLayers();
@@ -455,6 +527,7 @@ function dessiner() {
     L.marker([p.lat, p.lng], { icon: iconePorte(p), keyboard: true, title: court(p) })
       .on('click', () => ouvrirPorte(p.id)).addTo(calquePortes);
   }
+  dessinerSecteurs();
   majCompteurs();
 }
 function majCompteurs() {
@@ -467,6 +540,9 @@ function majCompteurs() {
   $('#jour').textContent = n === 0 ? 'Aucune porte pour l’instant'
     : `${n} porte${n > 1 ? 's' : ''} · ${ouvertes} ouverte${ouvertes > 1 ? 's' : ''} · ${r1} R1`;
   $('#nb-repasser').textContent = aRepasser().length;
+  const dus = rappelsDus().length;
+  $('#nb-menu').hidden = !dus; $('#nb-menu').textContent = dus;
+  $('#b-menu').setAttribute('aria-label', dus ? `Menu, ${dus} rappel${dus > 1 ? 's' : ''} à faire` : 'Menu');
   $('#aide').hidden = portes().length > 0;
 }
 
@@ -529,6 +605,7 @@ function porteExistante(adr, lat, lng) {
   return portes().find(p => (k && cleAdresse(p.adresse) === k && adr.numero) || metres([p.lat, p.lng], [lat, lng]) < 6);
 }
 async function nouvellePorteA(lat, lng, origine) {
+  photosEnAttente = [];
   if (marqueurTemp) carte.removeLayer(marqueurTemp);
   marqueurTemp = L.marker([lat, lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="m-porte temp">?</div>' }), interactive: false }).addTo(carte);
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Recherche de l'adresse…</h2>${BTN_FERMER}</div>`);
@@ -563,18 +640,21 @@ function feuillePorte(p, neuf) {
     <div class="pile">
       ${p ? '' : `<label class="champ">Adresse<input id="i-adr" value="${esc(adresse)}" placeholder="N° et rue" autocomplete="off"></label>
         ${neuf.adr ? '' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
+      <div class="photos" id="photos" aria-label="Photos de la maison"></div>
       <label class="champ">Note <span style="text-transform:none;letter-spacing:0;font-weight:500">(facultatif, avant de choisir)</span><input id="i-note" placeholder="ex. toit moussu, revenir le soir" autocomplete="off"></label>
-      ${p ? carteR1(p) : ''}
+      ${p ? carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : ''}
       <div class="statuts">${boutons}</div>
       ${p ? `<h3>Passages</h3><ul class="histo">${histo}</ul>` : ''}
       ${(p ? p.rue : neuf.adr && neuf.adr.rue) ? '<button class="b2 plein" id="b-tournee" style="align-self:flex-start">Tournée de cette rue →</button>' : ''}
       <div class="ligne-btns">${liensItineraire(lat, lng)}${p ? '<button class="b2 danger" id="b-suppr">Supprimer</button>' : ''}</div>
     </div>`, f => {
-    if (p && p.r1) {
+    if (p && f.querySelector('#b-r1cal')) {
       f.querySelector('#b-r1cal').onclick = () => ajouterAuCalendrier(p);
       f.querySelector('#b-r1modif').onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
       f.querySelector('#b-r1partage').onclick = () => partagerIcs(p);
     }
+    if (p) brancherSuivi(f, p);
+    brancherPhotos(f.querySelector('#photos'), p);
     const bt = f.querySelector('#b-tournee');
     if (bt) bt.onclick = () => {
       const src = p || neuf.adr;
@@ -592,6 +672,7 @@ function feuillePorte(p, neuf) {
           rue: memeAdr ? neuf.adr.rue : '', ville: memeAdr ? neuf.adr.ville : '',
           lat, lng, statut, visites: [], auteur: etat.moi, cree: maintenant(), maj: maintenant(),
         };
+        if (photosEnAttente.length) { np.photos = photosEnAttente.map(id => ({ id, date: maintenant(), auteur: etat.moi })); photosEnAttente = []; }
         etat.portes.push(np);
         ajouterVisite(np, statut, note);
       }
@@ -618,6 +699,8 @@ function ajouterVisite(p, statut, note, apresAnnuler) {
   });
   // Un R1 pris : on note le rendez-vous tout de suite, pendant qu'on est devant la porte
   if (statut === 'r1') feuilleR1(p, tournee ? () => afficherTournee(false) : null);
+  // Un intéressé : on fixe tout de suite quand le rappeler
+  if (statut === 'rappel') feuilleRappel(p, tournee ? () => afficherTournee(false) : null);
 }
 
 /* ───────── R1 → calendrier ───────── */
@@ -630,7 +713,7 @@ function texteR1(r) {
   return `${jour.charAt(0).toUpperCase() + jour.slice(1)} à ${(r.heure || '18:00').replace(':', 'h')}`;
 }
 function feuilleR1(p, apres) {
-  const r = p.r1 || {};
+  const r = Object.assign({}, p.aRappeler ? { nom: p.aRappeler.nom, tel: p.aRappeler.tel } : {}, p.r1 || {});
   const demain = new Date(Date.now() + 864e5);
   const derniereNote = [...p.visites].reverse().find(v => v.note);
   ouvrirFeuille(`
@@ -644,7 +727,7 @@ function feuilleR1(p, apres) {
         <label class="champ">Heure<input id="r-heure" type="time" value="${esc(r.heure || '18:00')}" step="900"></label>
       </div>
       <div class="champ" style="gap:8px">Durée<div class="puces" id="r-duree">${[45, 60, 90].map(m => `<button class="puce" data-m="${m}" aria-pressed="${m === (r.duree || 60)}">${m < 60 ? m + ' min' : m === 60 ? '1 h' : '1 h 30'}</button>`).join('')}</div></div>
-      <label class="champ">Besoin, à noter pour le R1<input id="r-besoin" value="${esc(r.besoin || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. nettoyage vapeur + hydrofuge, toit moussu côté nord" autocomplete="off"></label>
+      <label class="champ">Besoin, à noter pour le R1<input id="r-besoin" value="${esc(r.besoin || (p.aRappeler && p.aRappeler.note) || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. nettoyage vapeur + hydrofuge, toit moussu côté nord" autocomplete="off"></label>
       <button class="b2 jaune" id="r-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>
       <div class="ligne-btns"><button class="b2" id="r-ok">Enregistrer seulement</button><button class="b2" id="r-plus-tard">Plus tard</button></div>
     </div>`, f => {
@@ -682,61 +765,55 @@ function icsPlier(ligne) {
   out.push(cour); return out.join('\r\n');
 }
 const icsDate = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-function fabriquerIcs(p) {
-  const r = p.r1, debut = dateR1(r), fin = new Date(+debut + (r.duree || 60) * 60000);
+const lienPlans = p => `https://maps.apple.com/?daddr=${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
+const frappeeLe = p => {
   const ch = chantierProche(p.lat, p.lng);
-  const desc = [
-    r.tel && `Tél. : ${r.tel}`,
-    r.besoin && `Besoin : ${r.besoin}`,
-    `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`,
-  ].filter(Boolean).join('\n');
+  return `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`;
+};
+// Un rendez-vous à mettre au calendrier : R1, R2 ou rappel téléphonique
+function evenementR1(p) {
+  const r = p.r1, debut = dateR1(r);
+  return { uid: `${p.id}-r1`, titre: `R1 – ${r.nom || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
+    lieu: p.adresse, geo: p, alarme: 'R1 dans 1 heure : ' + court(p),
+    notes: [r.tel && `Tél. : ${r.tel}`, r.besoin && `Besoin : ${r.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
+}
+function fabriquerIcs(p, ev) {
+  ev = ev || evenementR1(p);
   const lignes = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Carte de prospection//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    `UID:${p.id}-r1@carte-prospection`,
+    `UID:${ev.uid}@carte-prospection`,
     `DTSTAMP:${icsDate(new Date())}`,
-    `DTSTART:${icsDate(debut)}`,
-    `DTEND:${icsDate(fin)}`,
-    `SUMMARY:${icsTexte(`R1 – ${r.nom || 'client'} – ${court(p)}`)}`,
-    `LOCATION:${icsTexte(p.adresse)}`,
-    `GEO:${p.lat.toFixed(6)};${p.lng.toFixed(6)}`,
-    `DESCRIPTION:${icsTexte(desc)}`,
-    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${icsTexte('R1 dans 1 heure : ' + court(p))}`, 'END:VALARM',
+    `DTSTART:${icsDate(ev.debut)}`,
+    `DTEND:${icsDate(ev.fin)}`,
+    `SUMMARY:${icsTexte(ev.titre)}`,
+    `LOCATION:${icsTexte(ev.lieu)}`,
+    ...(ev.geo ? [`GEO:${ev.geo.lat.toFixed(6)};${ev.geo.lng.toFixed(6)}`] : []),
+    `DESCRIPTION:${icsTexte(ev.notes)}`,
+    ...(ev.alarme ? ['BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${icsTexte(ev.alarme)}`, 'END:VALARM'] : []),
     'END:VEVENT', 'END:VCALENDAR',
   ];
   return lignes.map(icsPlier).join('\r\n') + '\r\n';
 }
 window.ouvrirUrl = u => { location.href = u; };
 const NOM_RACCOURCI = 'Ajouter R1';
-function isoAvecFuseau(d) {
-  const o = -d.getTimezoneOffset(), s = o >= 0 ? '+' : '-', a = Math.abs(o);
-  return `${isoLocal(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${s}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
-}
 // Format lu par Raccourcis sur un iPhone en français : « 26/10/2026 18:00 »
 const dateRaccourci = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-function donneesRaccourci(p) {
-  const r = p.r1, debut = dateR1(r), fin = new Date(+debut + (r.duree || 60) * 60000);
-  const ch = chantierProche(p.lat, p.lng);
-  return {
-    titre: `R1 – ${r.nom || 'client'} – ${court(p)}`,
-    debut: dateRaccourci(debut),
-    fin: dateRaccourci(fin),
-    lieu: p.adresse,
-    notes: [r.tel && `Tél. : ${r.tel}`, r.besoin && `Besoin : ${r.besoin}`,
-      `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`,
-      `Plans : https://maps.apple.com/?daddr=${p.lat},${p.lng}`].filter(Boolean).join('\n'),
-  };
+function donneesRaccourci(p, ev) {
+  ev = ev || evenementR1(p);
+  return { titre: ev.titre, debut: dateRaccourci(ev.debut), fin: dateRaccourci(ev.fin), lieu: ev.lieu,
+    notes: [ev.notes, ev.geo ? `Plans : ${lienPlans(ev.geo)}` : ''].filter(Boolean).join('\n') };
 }
-async function ajouterAuCalendrier(p) {
-  const ics = fabriquerIcs(p);
-  const nom = `R1-${cleAdresse(p.r1.nom || court(p)).replace(/ /g, '-').slice(0, 40) || 'client'}.ics`;
+async function ajouterAuCalendrier(p, ev) {
+  ev = ev || evenementR1(p);
   // iPhone : iOS interdit à une appli web d'ouvrir un fichier calendrier.
-  // On passe par l'appli Raccourcis : le raccourci « Ajouter R1 » crée l'évènement.
+  // On passe par l'appli Raccourcis : le raccourci « Ajouter R1 » crée l'évènement (R1, R2 ou rappel).
   if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-    ouvrirUrl('shortcuts://run-shortcut?name=' + encodeURIComponent(NOM_RACCOURCI) + '&input=text&text=' + encodeURIComponent(JSON.stringify(donneesRaccourci(p))));
+    ouvrirUrl('shortcuts://run-shortcut?name=' + encodeURIComponent(NOM_RACCOURCI) + '&input=text&text=' + encodeURIComponent(JSON.stringify(donneesRaccourci(p, ev))));
     return;
   }
-  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const nom = `${cleAdresse(ev.titre).replace(/ /g, '-').slice(0, 50) || 'rendez-vous'}.ics`;
+  const url = URL.createObjectURL(new Blob([fabriquerIcs(p, ev)], { type: 'text/calendar;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = nom;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
   toast('Rendez-vous envoyé au calendrier');
@@ -760,7 +837,432 @@ function r1AVenir() {
   return portes().filter(p => p.r1 && p.r1.date && dateR1(p.r1) > new Date(Date.now() - 3 * 3600e3))
     .sort((a, b) => dateR1(a.r1) - dateR1(b.r1));
 }
-carte.on('click', e => nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte'));
+function rdvAVenir() {
+  const lim = new Date(Date.now() - 3 * 3600e3), out = [];
+  for (const p of portes()) {
+    if (p.r1 && p.r1.date && dateR1(p.r1) > lim && !['signe', 'perdu'].includes(etapeDe(p))) out.push({ p, type: 'R1', rdv: p.r1, quand: dateR1(p.r1) });
+    const r2 = rdvR2(p);
+    if (r2 && dateR1(r2) > lim && etapeDe(p) === 'r2') out.push({ p, type: 'R2', rdv: r2, quand: dateR1(r2) });
+  }
+  return out.sort((a, b) => a.quand - b.quand);
+}
+
+/* ───────── Après le R1 : R2, devis, signature ───────── */
+const ETAPES = { r1: 'R1', r2: 'R2', devis: 'Devis', signe: 'Signé', perdu: 'Perdu' };
+const ETAPES_LONG = { r1: 'R1 pris', r2: 'R2 calé', devis: 'Devis envoyé', signe: 'Signé', perdu: 'Perdu' };
+const ORDRE = ['r1', 'r2', 'devis', 'signe'];
+const RAISONS = ['Trop cher', 'Concurrent', 'Pas maintenant', 'Plus de nouvelles', 'Autre'];
+const fmtEuros = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const euros = n => n ? fmtEuros.format(n) : '';
+const lireMontant = v => Math.round(parseFloat(String(v || '').replace(/[\s  €]/g, '').replace(',', '.')) || 0);
+const suiviDe = p => p.suivi || [];
+function etapeDe(p) {
+  const s = suiviDe(p);
+  if (s.length) return s[s.length - 1].etape;
+  return (p.r1 || p.statut === 'r1' || p.visites.some(v => v.statut === 'r1')) ? 'r1' : null;
+}
+function niveauAtteint(p) {
+  let n = etapeDe(p) ? 0 : -1;
+  for (const e of suiviDe(p)) n = Math.max(n, ORDRE.indexOf(e.etape));
+  return n;
+}
+const derniereEtape = (p, ...k) => [...suiviDe(p)].reverse().find(e => k.includes(e.etape));
+const montantSigne = p => etapeDe(p) === 'signe' ? (derniereEtape(p, 'signe').montant || 0) : 0;
+const montantDevis = p => { const e = derniereEtape(p, 'signe', 'devis'); return e ? (e.montant || 0) : 0; };
+function rdvR2(p) { const e = derniereEtape(p, 'r2'); return e && e.rdv && e.rdv.date ? e.rdv : null; }
+const nomClient = p => (p.r1 && p.r1.nom) || (p.aRappeler && p.aRappeler.nom) || '';
+const telClient = p => (p.r1 && p.r1.tel) || (p.aRappeler && p.aRappeler.tel) || '';
+function evenementR2(p) {
+  const r = rdvR2(p), debut = dateR1(r);
+  return { uid: `${p.id}-r2`, titre: `R2 – ${nomClient(p) || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
+    lieu: p.adresse, geo: p, alarme: 'R2 dans 1 heure : ' + court(p),
+    notes: [telClient(p) && `Tél. : ${telClient(p)}`, r.note && `À préparer : ${r.note}`, p.r1 && p.r1.besoin && `Besoin : ${p.r1.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
+}
+function texteEtape(e) {
+  const morceaux = [ETAPES_LONG[e.etape]];
+  if (e.rdv && e.rdv.date) morceaux.push(texteR1(e.rdv));
+  if (e.montant) morceaux.push(euros(e.montant));
+  if (e.raison) morceaux.push(e.raison);
+  return morceaux.join(' · ');
+}
+function carteSuivi(p) {
+  const et = etapeDe(p); if (!et) return '';
+  const niv = niveauAtteint(p), fini = et === 'signe' || et === 'perdu';
+  const frise = ORDRE.map((k, i) => `<span class="etape${i <= niv ? ' faite' : ''}${k === et ? ' courante' : ''}">${ETAPES[k]}</span>`).join('<i></i>')
+    + (et === 'perdu' ? `<i></i><span class="etape courante">Perdu</span>` : '');
+  const der = suiviDe(p).slice(-1)[0];
+  let titre = '', alerte = '';
+  if (et === 'r1') titre = p.r1 && p.r1.date ? (dateR1(p.r1) < new Date() ? 'R1 fait : quelle suite ?' : 'R1 à venir') : 'R1 pris : note le rendez-vous';
+  if (et === 'r2') { const r = rdvR2(p); titre = r ? `R2 ${texteR1(r)}` : 'R2 à caler'; }
+  if (et === 'devis') {
+    titre = `Devis envoyé${der.montant ? ' · ' + euros(der.montant) : ''}`;
+    const j = Math.floor((Date.now() - new Date(der.date)) / 864e5);
+    if (j >= 7) alerte = `Envoyé il y a ${j} jours : pense à relancer.`;
+  }
+  if (et === 'signe') titre = `Signé${der.montant ? ' · ' + euros(der.montant) : ''} 🎉`;
+  if (et === 'perdu') titre = `Perdu${der.raison ? ' · ' + der.raison : ''}`;
+  const histo = suiviDe(p).slice().reverse().map(e => `<li><span class="pastille ${e.etape === 'perdu' ? 'stop' : 'r1'}"></span><span><b>${esc(texteEtape(e))}</b> <span class="quand">· ${esc(quand(e.date))}${e.auteur && cleAdresse(e.auteur) !== cleAdresse(etat.moi) ? ' · ' + esc(e.auteur) : ''}</span>${e.note ? `<br><span class="note">${esc(e.note)}</span>` : ''}</span></li>`).join('');
+  const btns = fini ? '' : [
+    !(p.r1 && p.r1.date) ? '<button class="b2" id="b-noter-r1">Noter le R1</button>' : '',
+    niv < 1 ? '<button class="b2" data-et="r2">R2 calé</button>' : et === 'r2' ? '<button class="b2" data-et="r2">Déplacer le R2</button>' : '',
+    niv < 2 ? '<button class="b2" data-et="devis">Devis envoyé</button>' : '',
+    '<button class="b2 vert" data-et="signe">Signé</button>',
+    '<button class="b2 danger" data-et="perdu">Perdu</button>'].join('');
+  return `<div class="carte-suivi"><div class="frise${et === 'perdu' ? ' perdu' : ''}">${frise}</div>
+    <span class="suivi-titre">${esc(titre)}${et === 'r2' && rdvR2(p) && rdvR2(p).note ? `<small>${esc(rdvR2(p).note)}</small>` : ''}</span>
+    ${alerte ? `<span class="alerte">${esc(alerte)}</span>` : ''}
+    ${et !== 'r1' && (nomClient(p) || telClient(p)) ? `<span class="qui">${esc([nomClient(p), telClient(p)].filter(Boolean).join(' · '))}</span>` : ''}
+    <div class="ligne-btns">${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
+    ${histo ? `<ul class="histo">${histo}</ul><button class="lien" id="b-suivi-annuler">Annuler la dernière étape</button>` : ''}
+  </div>`;
+}
+function brancherSuivi(f, p) {
+  f.querySelectorAll('[data-et]').forEach(b => b.onclick = () => feuilleEtape(p, b.dataset.et));
+  const r2 = f.querySelector('#b-r2cal'); if (r2) r2.onclick = () => ajouterAuCalendrier(p, evenementR2(p));
+  const nr = f.querySelector('#b-noter-r1'); if (nr) nr.onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
+  const an = f.querySelector('#b-suivi-annuler');
+  if (an) an.onclick = () => {
+    if (!an.dataset.ok) { an.dataset.ok = 1; an.textContent = `Confirmer : retirer « ${texteEtape(suiviDe(p).slice(-1)[0])} »`; return; }
+    p.suivi.pop(); p.maj = maintenant(); sauver(); dessiner(); ouvrirPorte(p.id);
+  };
+  const rm = f.querySelector('#b-rapmodif'); if (rm) rm.onclick = () => feuilleRappel(p, () => ouvrirPorte(p.id));
+  const rc = f.querySelector('#b-rapcal'); if (rc) rc.onclick = () => ajouterAuCalendrier(p, evenementRappel(p));
+}
+function feuilleEtape(p, etape) {
+  const revenir = () => ouvrirPorte(p.id);
+  const ancien = etape === 'r2' ? (rdvR2(p) || {}) : {};
+  const demain = isoLocal(new Date(Date.now() + 7 * 864e5));
+  const champs = {
+    r2: `<div class="grille2">
+        <label class="champ">Date<input id="e-date" type="date" value="${esc(ancien.date || demain)}"></label>
+        <label class="champ">Heure<input id="e-heure" type="time" value="${esc(ancien.heure || '18:00')}" step="900"></label></div>
+      <div class="champ" style="gap:8px">Durée<div class="puces">${[45, 60, 90].map(m => `<button class="puce" data-m="${m}" aria-pressed="${m === (ancien.duree || 60)}">${m < 60 ? m + ' min' : m === 60 ? '1 h' : '1 h 30'}</button>`).join('')}</div></div>
+      <label class="champ">À préparer<input id="e-note" value="${esc(ancien.note || '')}" placeholder="ex. devis vapeur + hydrofuge, échantillons" autocomplete="off"></label>`,
+    devis: `<label class="champ">Montant du devis (TTC)<input id="e-montant" inputmode="decimal" placeholder="ex. 8 500" autocomplete="off"></label>
+      <label class="champ">Note<input id="e-note" placeholder="ex. envoyé par mail, rappeler vendredi" autocomplete="off"></label>`,
+    signe: `<label class="champ">Montant signé (TTC)<input id="e-montant" inputmode="decimal" value="${montantDevis(p) || ''}" placeholder="ex. 8 500" autocomplete="off"></label>
+      <label class="champ">Note<input id="e-note" placeholder="ex. travaux prévus en mars" autocomplete="off"></label>`,
+    perdu: `<div class="champ" style="gap:8px">Pourquoi ?<div class="puces">${RAISONS.map(r => `<button class="puce" data-r="${esc(r)}" aria-pressed="false">${esc(r)}</button>`).join('')}</div></div>
+      <label class="champ">Note<input id="e-note" placeholder="ex. a signé avec un concurrent à 6 000 €" autocomplete="off"></label>`,
+  }[etape];
+  const titres = { r2: 'R2 calé', devis: 'Devis envoyé', signe: 'Signé 🎉', perdu: 'Projet perdu' };
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${titres[etape]}</h2>${BTN_FERMER}</div>
+    <p class="sous">${esc([nomClient(p), court(p)].filter(Boolean).join(' · '))}</p>
+    <div class="pile">${champs}
+      ${etape === 'r2' ? '<button class="b2 jaune" id="e-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>' : ''}
+      <div class="ligne-btns"><button class="b2${etape === 'r2' ? '' : ' plein'}" id="e-ok">Enregistrer</button><button class="b2" id="e-annuler">Annuler</button></div>
+    </div>`, f => {
+    let duree = ancien.duree || 60, raison = '';
+    f.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { duree = +b.dataset.m; f.querySelectorAll('[data-m]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    f.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { raison = b.dataset.r; f.querySelectorAll('[data-r]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    const val = id => { const e = f.querySelector(id); return e ? e.value.trim() : ''; };
+    const enregistrer = () => {
+      const e = { date: maintenant(), etape, auteur: etat.moi, note: val('#e-note') };
+      if (etape === 'r2') {
+        if (!val('#e-date')) { toast('Choisis la date du R2.'); return false; }
+        e.rdv = { date: val('#e-date'), heure: val('#e-heure') || '18:00', duree, note: e.note }; e.note = '';
+      }
+      if (etape === 'devis' || etape === 'signe') e.montant = lireMontant(val('#e-montant'));
+      if (etape === 'perdu') e.raison = raison;
+      p.suivi = [...suiviDe(p), e]; p.maj = maintenant(); sauver(); dessiner();
+      return true;
+    };
+    f.querySelector('#e-ok').onclick = () => { if (enregistrer()) { revenir(); toast(texteEtape(suiviDe(p).slice(-1)[0])); } };
+    const c = f.querySelector('#e-cal'); if (c) c.onclick = () => { if (enregistrer()) { revenir(); ajouterAuCalendrier(p, evenementR2(p)); } };
+    f.querySelector('#e-annuler').onclick = revenir;
+    f.querySelector('.fermer').onclick = revenir;
+  });
+}
+
+/* ───────── Intéressés : quand les rappeler ───────── */
+const dateRappel = r => new Date(`${r.date}T${r.heure || '18:00'}:00`);
+function texteRappel(r) {
+  const d = dateRappel(r), auj = isoLocal(new Date()), demain = isoLocal(new Date(Date.now() + 864e5));
+  const jour = r.date === auj ? 'Aujourd’hui' : r.date === demain ? 'Demain' : (s => s.charAt(0).toUpperCase() + s.slice(1))(d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }));
+  return `${jour} à ${(r.heure || '18:00').replace(':', 'h')}`;
+}
+const aRappelerListe = () => portes().filter(p => p.statut === 'rappel')
+  .sort((a, b) => (a.aRappeler ? a.aRappeler.date + (a.aRappeler.heure || '') : '9') < (b.aRappeler ? b.aRappeler.date + (b.aRappeler.heure || '') : '9') ? -1 : 1);
+const rappelsDus = () => portes().filter(p => p.statut === 'rappel' && p.aRappeler && p.aRappeler.date <= isoLocal(new Date()));
+function evenementRappel(p) {
+  const r = p.aRappeler, debut = dateRappel(r);
+  return { uid: `${p.id}-rappel-${r.date}`, titre: `📞 Rappeler ${r.nom || 'le client'} – ${court(p)}`, debut, fin: new Date(+debut + 15 * 60000),
+    lieu: p.adresse, geo: p, alarme: null,
+    notes: [r.tel && `Tél. : ${r.tel}`, r.note && `Intéressé par : ${r.note}`, `Porte frappée le ${new Date(p.visites.slice(-1)[0].date).toLocaleDateString('fr-FR')}`].filter(Boolean).join('\n') };
+}
+function carteRappel(p) {
+  if (p.statut !== 'rappel') return '';
+  const r = p.aRappeler;
+  if (!r || !r.date) return `<div class="carte-rappel"><span class="suivi-titre">Intéressé : quand le rappeler ?</span>
+    <div class="ligne-btns"><button class="b2 plein" id="b-rapmodif">Fixer une date de rappel</button></div></div>`;
+  const retard = dateRappel(r) < new Date();
+  return `<div class="carte-rappel"><span class="quand-r1${retard ? ' retard' : ''}">${retard ? 'À rappeler depuis ' : 'À rappeler '}${esc(texteRappel(r).replace(/^./, c => c.toLowerCase()))}</span>
+    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Nom et téléphone non notés')}${r.note ? '<br>' + esc(r.note) : ''}</span>
+    <div class="ligne-btns">${r.tel ? `<a class="b2 plein" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
+      <button class="b2" id="b-rapcal">Calendrier</button><button class="b2" id="b-rapmodif">Modifier</button></div>
+    <span class="sous" style="margin:0">Après l’appel, choisis « R1 pris » ou « Pas intéressé » plus bas.</span></div>`;
+}
+function feuilleRappel(p, apres) {
+  const r = p.aRappeler || {};
+  const derniereNote = [...p.visites].reverse().find(v => v.note);
+  const dansJours = j => isoLocal(new Date(Date.now() + j * 864e5));
+  const choix = [[0, 'Ce soir'], [1, 'Demain'], [3, 'Dans 3 jours'], [7, 'Dans 1 semaine'], [14, 'Dans 2 semaines']];
+  const d0 = r.date || dansJours(1);
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${r.date ? 'Modifier le rappel' : 'Intéressé : à rappeler'}</h2>${BTN_FERMER}</div>
+    <p class="sous">${esc(court(p))}${p.ville ? ' · ' + esc(p.ville) : ''}</p>
+    <div class="pile">
+      <label class="champ">Nom<input id="a-nom" value="${esc(r.nom || '')}" placeholder="ex. Mme Durand" autocomplete="off"></label>
+      <label class="champ">Téléphone<input id="a-tel" type="tel" value="${esc(r.tel || '')}" placeholder="06 12 34 56 78" autocomplete="off"></label>
+      <div class="champ" style="gap:8px">Quand rappeler<div class="puces">${choix.map(([j, t]) => `<button class="puce" data-j="${j}" aria-pressed="${dansJours(j) === d0}">${t}</button>`).join('')}</div></div>
+      <div class="grille2">
+        <label class="champ">Date<input id="a-date" type="date" value="${esc(d0)}"></label>
+        <label class="champ">Heure<input id="a-heure" type="time" value="${esc(r.heure || '18:00')}" step="900"></label>
+      </div>
+      <label class="champ">Ce qui l’intéresse<input id="a-note" value="${esc(r.note || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. démoussage, attend l’accord de son mari" autocomplete="off"></label>
+      <button class="b2 jaune" id="a-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>
+      <div class="ligne-btns"><button class="b2" id="a-ok">Enregistrer seulement</button><button class="b2" id="a-plus-tard">Plus tard</button></div>
+    </div>`, f => {
+    const dIn = f.querySelector('#a-date');
+    f.querySelectorAll('[data-j]').forEach(b => b.onclick = () => { dIn.value = dansJours(+b.dataset.j); f.querySelectorAll('[data-j]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    dIn.onchange = () => f.querySelectorAll('[data-j]').forEach(x => x.setAttribute('aria-pressed', dansJours(+x.dataset.j) === dIn.value));
+    const enregistrer = () => {
+      if (!dIn.value) { toast('Choisis la date du rappel.'); return false; }
+      p.aRappeler = { nom: f.querySelector('#a-nom').value.trim(), tel: f.querySelector('#a-tel').value.trim(), date: dIn.value,
+        heure: f.querySelector('#a-heure').value || '18:00', note: f.querySelector('#a-note').value.trim(), maj: maintenant() };
+      p.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
+      return true;
+    };
+    f.querySelector('#a-ok').onclick = () => { if (enregistrer()) { toast(`À rappeler : ${texteRappel(p.aRappeler).toLowerCase()}`); apres && apres(); } };
+    f.querySelector('#a-cal').onclick = () => { if (enregistrer()) { ajouterAuCalendrier(p, evenementRappel(p)); apres && apres(); } };
+    f.querySelector('#a-plus-tard').onclick = () => { fermerFeuille(); apres && apres(); };
+    f.querySelector('.fermer').onclick = () => { fermerFeuille(); apres && apres(); };
+  });
+}
+
+/* ───────── Secteurs : ce que chaque rue a donné ───────── */
+const calqueSecteurs = L.layerGroup();
+let voirSecteurs = false;
+try { voirSecteurs = localStorage.getItem(CLE + ':secteurs') === '1'; } catch (e) {}
+const cleRue = (rue, ville) => `${cleAdresse(rue)}|${cleAdresse(ville)}`;
+function groupesRues() {
+  const m = new Map();
+  for (const p of portes()) {
+    if (!p.rue) continue;
+    const k = cleRue(p.rue, p.ville);
+    if (!m.has(k)) m.set(k, { cle: k, rue: p.rue, ville: p.ville || '', portes: [] });
+    m.get(k).portes.push(p);
+  }
+  return [...m.values()];
+}
+const etatRue = k => (etat.rues || {})[k] || null;
+function resultatRue(g) {
+  if (g.portes.some(p => etapeDe(p) === 'signe')) return 'signe';
+  if (g.portes.some(p => etapeDe(p) && etapeDe(p) !== 'perdu')) return 'r1';
+  if (g.portes.some(p => p.statut === 'rappel')) return 'rappel';
+  return 'rien';
+}
+function situationRue(k) {
+  const r = etatRue(k);
+  if (!r || !r.terminee) return 'ouverte';
+  return r.refaire && r.refaire <= isoLocal(new Date()) ? 'refaire' : 'terminee';
+}
+function traceRue(pts) {
+  if (pts.length < 3) return pts;
+  // Axe de la rue : les deux portes les plus éloignées ; on range les portes le long de cet axe
+  const k = Math.cos(pts[0][0] * Math.PI / 180);
+  let a = pts[0], b = pts[1], dmax = -1;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const d = (pts[i][0] - pts[j][0]) ** 2 + ((pts[i][1] - pts[j][1]) * k) ** 2;
+    if (d > dmax) { dmax = d; a = pts[i]; b = pts[j]; }
+  }
+  const ux = (b[1] - a[1]) * k, uy = b[0] - a[0];
+  const t = q => (q[1] - a[1]) * k * ux + (q[0] - a[0]) * uy;
+  const tri = [...pts].sort((x, y) => t(x) - t(y));
+  // Lissage : moyenne avec les voisines (gomme le zigzag entre côté pair et côté impair)
+  return tri.map((q, i) => {
+    if (i === 0 || i === tri.length - 1) return q;
+    const v = tri.slice(Math.max(0, i - 2), i + 3);
+    return [v.reduce((s, x) => s + x[0], 0) / v.length, v.reduce((s, x) => s + x[1], 0) / v.length];
+  });
+}
+function dessinerSecteurs() {
+  calqueSecteurs.clearLayers();
+  $('#b-secteurs').classList.toggle('actif', voirSecteurs);
+  $('#legende-secteurs').hidden = !voirSecteurs;
+  document.body.classList.toggle('secteurs', voirSecteurs);
+  if (!voirSecteurs) { carte.removeLayer(calqueSecteurs); return; }
+  calqueSecteurs.addTo(carte);
+  for (const g of groupesRues()) {
+    const sit = situationRue(g.cle);
+    const classe = `secteur s-${sit === 'refaire' ? 'refaire' : resultatRue(g)}${sit === 'terminee' ? ' terminee' : ''}`;
+    const pts = g.portes.map(p => [p.lat, p.lng]);
+    const forme = pts.length === 1
+      ? L.circleMarker(pts[0], { radius: 14, className: classe, weight: 0, bubblingMouseEvents: false })
+      : L.polyline(traceRue(pts), { className: classe, weight: 18, lineCap: 'round', lineJoin: 'round', bubblingMouseEvents: false });
+    forme.on('click', () => feuilleRue(g.cle)).bindTooltip(g.rue, { direction: 'top', sticky: true }).addTo(calqueSecteurs);
+  }
+}
+$('#b-secteurs').onclick = () => {
+  voirSecteurs = !voirSecteurs;
+  try { localStorage.setItem(CLE + ':secteurs', voirSecteurs ? '1' : '0'); } catch (e) {}
+  dessinerSecteurs(); majCompteurs();
+  if (voirSecteurs) toast(groupesRues().length ? 'Secteurs : touche une rue pour son bilan' : 'Aucune rue notée pour l’instant');
+};
+function marquerRue(g, mois) {
+  etat.rues = etat.rues || {};
+  const d = new Date(); d.setMonth(d.getMonth() + mois);
+  etat.rues[g.cle] = { rue: g.rue, ville: g.ville, terminee: mois ? maintenant() : null, refaire: mois ? isoLocal(d) : null, maj: maintenant() };
+  sauver(); dessiner();
+}
+const ruesARefaire = () => groupesRues().filter(g => situationRue(g.cle) === 'refaire');
+function feuilleRue(cle) {
+  const g = groupesRues().find(x => x.cle === cle); if (!g) return;
+  const r = etatRue(cle), sit = situationRue(cle);
+  const liste = []; for (const p of g.portes) p.visites.forEach((v, i) => liste.push({ p, v, repassage: i > 0 }));
+  const s = compter(liste);
+  const signes = g.portes.filter(p => etapeDe(p) === 'signe'), ca = signes.reduce((t, p) => t + montantSigne(p), 0);
+  const r1 = g.portes.filter(p => etapeDe(p)).length;
+  const der = liste.reduce((m, x) => x.v.date > m ? x.v.date : m, '');
+  const tri = [...g.portes].sort((a, b) => (parseInt(a.numero, 10) || 0) - (parseInt(b.numero, 10) || 0));
+  const fmtJ = iso => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${esc(g.rue)}</h2>${BTN_FERMER}</div>
+    <p class="sous">${g.ville ? esc(g.ville) + ' · ' : ''}${pl(g.portes.length, 'porte notée', 'portes notées')}${der ? ' · dernier passage ' + esc(quand(der)) : ''}</p>
+    <div class="pile">
+      <div class="chiffres">
+        <div><b>${s.total}</b><span>passages</span></div>
+        <div><b>${s.ouvertes}</b><span>ouvertes</span></div>
+        <div><b>${r1}</b><span>R1</span></div>
+        <div><b>${signes.length}</b><span>signés</span></div>
+      </div>
+      <div class="taux">
+        <div><span>Taux d’ouverture</span><b>${pct(s.ouvertes, s.total)}</b></div>
+        <div><span>R1 sur portes ouvertes</span><b>${pct(s.r1, s.ouvertes)}</b></div>
+        ${ca ? `<div><span>Chiffre signé</span><b>${euros(ca)}</b></div>` : ''}
+      </div>
+      <div class="carte-rue">${sit === 'ouverte'
+        ? `<span class="suivi-titre">Rue faite ? <small>Elle passe en pointillés sur les secteurs, puis en jaune quand il est temps d’y retourner.</small></span>
+           <div class="puces">${[[3, 'À refaire dans 3 mois'], [6, '6 mois'], [12, '1 an']].map(([m, t]) => `<button class="puce" data-mois="${m}">${t}</button>`).join('')}</div>`
+        : `<span class="suivi-titre">${sit === 'refaire' ? 'À refaire : il est temps d’y retourner' : 'Rue terminée'}<small>Faite le ${esc(fmtJ(r.terminee))} · à refaire à partir du ${esc(fmtJ(r.refaire))}</small></span>
+           <div class="ligne-btns"><button class="b2" data-mois="0">Rouvrir la rue</button></div>`}</div>
+      <button class="b2 plein" id="b-tournee-rue" style="align-self:flex-start">Tournée de cette rue →</button>
+      <h3>Portes</h3>
+      <ul class="journal">${tri.map(p => { const et = etapeDe(p); return `<li><button data-p="${p.id}"><span class="h">${esc(p.numero || '–')}</span><span class="pastille ${p.statut}"></span>
+        <span><span class="a">${esc(STATUTS[p.statut].nom)}${et && et !== 'r1' ? ' · ' + esc(ETAPES_LONG[et]) + (montantSigne(p) ? ' ' + esc(euros(montantSigne(p))) : '') : ''}</span>
+        <span class="m">${esc(quand(p.visites.slice(-1)[0].date))}${p.visites.length > 1 ? ` · ${p.visites.length} passages` : ''}</span></span></button></li>`; }).join('')}</ul>
+    </div>`, f => {
+    f.querySelectorAll('[data-mois]').forEach(b => b.onclick = () => {
+      const m = +b.dataset.mois; marquerRue(g, m); feuilleRue(cle);
+      toast(m ? `Rue terminée, à refaire dans ${m === 12 ? '1 an' : m + ' mois'}` : 'Rue rouverte');
+    });
+    f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+    f.querySelector('#b-tournee-rue').onclick = () => {
+      const p0 = tri.find(p => parseInt(p.numero, 10)) || tri[0];
+      demarrerTournee({ rue: g.rue, ville: g.ville, numero: parseInt(p0.numero, 10) || 1, lat: p0.lat, lng: p0.lng });
+    };
+  });
+  const b = L.latLngBounds(g.portes.map(p => [p.lat, p.lng]));
+  carte.fitBounds(b.pad(.3), { maxZoom: 18, paddingBottomRight: [0, 300] });
+}
+
+/* ───────── Photos des maisons ───────── */
+const photosDB = (() => {
+  let base;
+  const ouvrir = () => base || (base = new Promise((ok, ko) => {
+    const r = indexedDB.open('carte-prospection-photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos');
+    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+  }));
+  const tx = async (mode, fn) => {
+    const db = await ouvrir();
+    return new Promise((ok, ko) => {
+      const t = db.transaction('photos', mode), req = fn(t.objectStore('photos'));
+      t.oncomplete = () => ok(req && req.result); t.onerror = () => ko(t.error); t.onabort = () => ko(t.error || new Error('stockage plein'));
+    });
+  };
+  return { mettre: (k, v) => tx('readwrite', s => s.put(v, k)), lire: k => tx('readonly', s => s.get(k)),
+    suppr: k => tx('readwrite', s => s.delete(k)), cles: () => tx('readonly', s => s.getAllKeys()) };
+})();
+let photosEnAttente = [], apresPhoto = null, urlsVignettes = [];
+async function compresser(fichier) {
+  const url = URL.createObjectURL(fichier);
+  try {
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error('image illisible')); i.src = url; });
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((ok, ko) => c.toBlob(b => b ? ok(b) : ko(new Error('compression impossible')), 'image/jpeg', .75));
+  } finally { URL.revokeObjectURL(url); }
+}
+function choisirPhoto(source, cb) { apresPhoto = cb; $(source === 'lib' ? '#f-photo-lib' : '#f-photo').click(); }
+for (const sel of ['#f-photo', '#f-photo-lib']) $(sel).onchange = async e => {
+  const fichiers = [...e.target.files]; e.target.value = '';
+  const cb = apresPhoto; apresPhoto = null;
+  if (!fichiers.length || !cb) return;
+  const ids = [];
+  for (const fi of fichiers) {
+    try { const blob = await compresser(fi); const id = uid(); await photosDB.mettre(id, { blob, date: maintenant() }); ids.push(id); }
+    catch (err) { toast('Photo non enregistrée : ' + (err && err.message || err)); }
+  }
+  if (ids.length) cb(ids);
+};
+const ICONE_PHOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const ICONE_PELLICULE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 16 5-5 4 4 2-2 5 5"/></svg>';
+const idsPhotos = p => p ? (p.photos || []).map(x => x.id) : photosEnAttente;
+async function brancherPhotos(zone, p) {
+  if (!zone) return;
+  urlsVignettes.splice(0).forEach(u => URL.revokeObjectURL(u));
+  const items = [];
+  for (const id of idsPhotos(p)) {
+    const r = await photosDB.lire(id).catch(() => null);
+    if (r && r.blob) { const u = URL.createObjectURL(r.blob); urlsVignettes.push(u); items.push({ id, u }); }
+  }
+  if (!zone.isConnected) return;
+  zone.innerHTML = items.map(x => `<button class="vignette" data-photo="${x.id}" aria-label="Voir la photo"><img src="${x.u}" alt=""></button>`).join('')
+    + `<button class="vignette ajout" data-ajout="cam">${ICONE_PHOTO}Photo</button><button class="vignette ajout" data-ajout="lib">${ICONE_PELLICULE}Pellicule</button>`;
+  const ajouter = ids => {
+    if (p) { p.photos = [...(p.photos || []), ...ids.map(id => ({ id, date: maintenant(), auteur: etat.moi }))]; sauver(); }
+    else photosEnAttente.push(...ids);
+    brancherPhotos(zone, p);
+    toast(ids.length > 1 ? `${ids.length} photos ajoutées` : 'Photo ajoutée');
+  };
+  zone.querySelectorAll('[data-ajout]').forEach(b => b.onclick = () => choisirPhoto(b.dataset.ajout, ajouter));
+  const ids = items.map(x => x.id);
+  zone.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => ouvrirPhoto(p, ids, ids.indexOf(b.dataset.photo), () => brancherPhotos(zone, p)));
+}
+let urlVue = null;
+async function ouvrirPhoto(p, ids, i, apresSuppr) {
+  const v = $('#visionneuse'), id = ids[i];
+  const r = await photosDB.lire(id).catch(() => null); if (!r) return;
+  if (urlVue) URL.revokeObjectURL(urlVue);
+  urlVue = URL.createObjectURL(r.blob);
+  $('#v-img').src = urlVue;
+  $('#v-info').textContent = `${p ? court(p) + ' · ' : ''}${ids.length > 1 ? `${i + 1}/${ids.length} · ` : ''}${new Date(r.date).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+  v.hidden = false;
+  const fermer = () => { v.hidden = true; if (urlVue) { URL.revokeObjectURL(urlVue); urlVue = null; } };
+  $('#v-prec').hidden = $('#v-suiv').hidden = ids.length < 2;
+  $('#v-prec').onclick = () => ouvrirPhoto(p, ids, (i - 1 + ids.length) % ids.length, apresSuppr);
+  $('#v-suiv').onclick = () => ouvrirPhoto(p, ids, (i + 1) % ids.length, apresSuppr);
+  $('#v-fermer').onclick = fermer;
+  $('#v-partager').onclick = async () => {
+    const f = new File([r.blob], `maison-${cleAdresse(p ? court(p) : 'photo').replace(/ /g, '-')}-${i + 1}.jpg`, { type: 'image/jpeg' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f] });
+      else { const a = document.createElement('a'); a.href = urlVue; a.download = f.name; a.click(); }
+    } catch (e) {}
+  };
+  const s = $('#v-suppr'); s.textContent = 'Supprimer'; s.classList.remove('plein'); delete s.dataset.ok;
+  s.onclick = async () => {
+    if (!s.dataset.ok) { s.dataset.ok = 1; s.textContent = 'Confirmer'; s.classList.add('plein'); return; }
+    if (p) { p.photos = (p.photos || []).filter(x => x.id !== id); sauver(); } else photosEnAttente = photosEnAttente.filter(x => x !== id);
+    await photosDB.suppr(id).catch(() => {});
+    fermer(); apresSuppr && apresSuppr(); toast('Photo supprimée');
+  };
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#visionneuse').hidden) $('#v-fermer').click(); });
+carte.on('click', e => {
+  if (voirSecteurs) return toast('Mode secteurs : touche une rue colorée, ou ferme-le avec son bouton à droite');
+  nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte');
+});
 $('#b-ici').onclick = async () => {
   toast('Recherche de ta position…');
   const pos = await positionFraiche();
@@ -799,12 +1301,16 @@ function demarrerTournee(t) {
   sauverTournee(); fermerFeuille();
   document.body.classList.add('en-tournee');
   afficherTournee(true);
+  const er = etatRue(cleRue(t.rue, t.ville));
+  if (situationRue(cleRue(t.rue, t.ville)) === 'terminee') setTimeout(() => toast(`Rue déjà faite le ${new Date(er.terminee).toLocaleDateString('fr-FR')} : à refaire à partir du ${new Date(er.refaire).toLocaleDateString('fr-FR')}`), 400);
 }
 function finirTournee() {
   const t = tournee; tournee = null; sauverTournee();
   document.body.classList.remove('en-tournee');
   $('#tournee').hidden = true; placerBoutonPosition();
-  if (t.faites) toast(`Tournée terminée : ${t.faites} porte${t.faites > 1 ? 's' : ''}, ${t.ouvertes} ouverte${t.ouvertes > 1 ? 's' : ''}, ${t.r1} R1`);
+  const g = { cle: cleRue(t.rue, t.ville), rue: t.rue, ville: t.ville };
+  if (t.faites) toast(`Tournée terminée : ${t.faites} porte${t.faites > 1 ? 's' : ''}, ${t.r1} R1`,
+    situationRue(g.cle) === 'terminee' ? null : { label: 'Rue finie', fn: () => { marquerRue(g, 6); toast('Rue terminée, à refaire dans 6 mois'); } });
 }
 function numeroSuivant(depuis, combien = 1) {
   let n = depuis;
@@ -929,7 +1435,7 @@ $('#b-repasser').onclick = () => {
     const c = conseilHoraire(p);
     return `<li><button data-id="${p.id}"><span class="pastille ${p.statut}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>
       <span class="txt"><span class="a">${esc(court(p))}</span>
-      <span class="m">${p.statut === 'rappel' ? 'Intéressé, à rappeler' : `Absent${nbAbs > 1 ? ' ×' + nbAbs : ''}`} · ${esc(quand(der.date))}${der.note ? ' · ' + esc(der.note) : ''}</span>
+      <span class="m">${p.statut === 'rappel' ? (p.aRappeler && p.aRappeler.date ? `À rappeler ${esc(texteRappel(p.aRappeler).toLowerCase())}` : 'Intéressé, à rappeler') : `Absent${nbAbs > 1 ? ' ×' + nbAbs : ''}`} · ${esc(quand(der.date))}${der.note ? ' · ' + esc(der.note) : ''}</span>
       ${c ? `<span class="conseil">${esc(c)}</span>` : ''}</span>
       <span class="dist">${distTxt(d)}</span></button></li>`;
   };
@@ -1065,9 +1571,9 @@ function grouper(liste, cle) {
   for (const x of liste) { const k = cle(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }
   return m;
 }
-function ligneTableau(nom, sous, liste) {
+function ligneTableau(nom, sous, liste, cle) {
   const s = compter(liste);
-  return `<tr><td>${esc(nom)}${sous ? `<small>${esc(sous)}</small>` : ''}</td><td>${s.total}</td><td>${s.ouvertes}</td><td>${s.rappel}</td><td class="${s.r1 ? 'r1' : ''}">${s.r1}</td></tr>`;
+  return `<tr${cle ? ` data-rue="${esc(cle)}"` : ''}><td>${esc(nom)}${sous ? `<small>${esc(sous)}</small>` : ''}</td><td>${s.total}</td><td>${s.ouvertes}</td><td>${s.rappel}</td><td class="${s.r1 ? 'r1' : ''}">${s.r1}</td></tr>`;
 }
 const enteteTableau = premier => `<thead><tr><th>${premier}</th><th>Portes</th><th>Ouv.</th><th>Int.</th><th>R1</th></tr></thead>`;
 let journalComplet = false;
@@ -1108,6 +1614,34 @@ function afficherBilan(zone) {
         ${minutes >= 1 ? `<div><span>Temps sur le terrain</span><b>${duree}${jours.size > 1 ? ` sur ${jours.size} jours` : ''}</b></div>` : ''}
         ${rythme ? `<div><span>Rythme</span><b>${rythme}</b></div>` : ''}
       </div>`;
+    // Après les R1 : que sont devenus les R1 pris sur la période ?
+    const cohorte = [...new Set(liste.filter(x => x.v.statut === 'r1').map(x => x.p))];
+    const [deb, fin] = bornesPeriode(periode);
+    const signatures = [];
+    for (const p of portes()) for (const e of suiviDe(p)) {
+      const d = new Date(e.date);
+      if (e.etape !== 'signe' || d < deb || d >= fin) continue;
+      if (plusieurs && qui === 'moi' && etat.moi && cleAdresse(e.auteur) !== cleAdresse(etat.moi)) continue;
+      signatures.push(e);
+    }
+    if (cohorte.length || signatures.length) {
+      const n = cohorte.length, atteint = i => cohorte.filter(p => niveauAtteint(p) >= i).length;
+      const signes = cohorte.filter(p => etapeDe(p) === 'signe'), perdus = cohorte.filter(p => etapeDe(p) === 'perdu');
+      const caCohorte = signes.reduce((t, p) => t + montantSigne(p), 0);
+      const caPeriode = signatures.reduce((t, e) => t + (e.montant || 0), 0);
+      const ligne = (t, v, cls) => `<div><span>${t}</span><em class="${cls || ''}" style="width:${n ? Math.max(2, 100 * v / n) : 0}%"></em><b>${v}</b></div>`;
+      html += `<h3>Après les R1</h3>`;
+      if (n) html += `<div class="entonnoir">${ligne('R1 pris', n)}${ligne('R2', atteint(1))}${ligne('Devis', atteint(2))}${ligne('Signés', signes.length)}${ligne('Perdus', perdus.length, 'perdu')}</div>`;
+      html += `<div class="taux">
+        ${n ? `<div><span>R1 signés</span><b>${pct(signes.length, n)}</b></div>
+        <div><span>En cours</span><b>${n - signes.length - perdus.length}</b></div>` : ''}
+        ${caCohorte ? `<div><span>Chiffre signé sur ces R1</span><b>${euros(caCohorte)}</b></div><div><span>Panier moyen</span><b>${euros(caCohorte / signes.length)}</b></div>` : ''}
+        ${signatures.length ? `<div><span>Signatures sur la période</span><b>${signatures.length} · ${euros(caPeriode) || '0 €'}</b></div>` : ''}
+        ${s.total && signes.length ? `<div><span>Portes pour 1 signature</span><b>${Math.round(s.total / signes.length)}</b></div>` : ''}
+      </div>`;
+      const raisons = grouper(perdus, p => derniereEtape(p, 'perdu').raison || 'Sans raison');
+      if (perdus.length) html += `<p class="sous" style="margin:-4px 0 0">Perdus : ${[...raisons.entries()].map(([r, l]) => `${esc(r.toLowerCase())} ${l.length}`).join(' · ')}</p>`;
+    }
     if (jours.size > 1) {
       html += `<h3>Jour par jour</h3><table class="tableau">${enteteTableau('Jour')}<tbody>${[...jours.values()].map(l =>
         ligneTableau(new Date(l[0].v.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }), `${heureTxt(l[l.length - 1].v.date)} → ${heureTxt(l[0].v.date)}`, l)).join('')}</tbody></table>`;
@@ -1115,7 +1649,9 @@ function afficherBilan(zone) {
     const rues = [...grouper(liste, x => x.p.rue ? `${x.p.rue}|${x.p.ville || ''}` : '?').entries()].sort((a, b) => b[1].length - a[1].length);
     if (rues.length > 1 || rues[0][0] !== '?') {
       html += `<h3>Par rue</h3><table class="tableau">${enteteTableau('Rue')}<tbody>${rues.slice(0, 12).map(([k, l]) => {
-        const [rue, ville] = k.split('|'); return ligneTableau(rue === '?' ? 'Adresse inconnue' : rue, ville, l); }).join('')}</tbody></table>`;
+        const [rue, ville] = k.split('|');
+        const ps = [...new Set(l.map(x => x.p))], sg = ps.filter(p => etapeDe(p) === 'signe'), ca = sg.reduce((t, p) => t + montantSigne(p), 0);
+        return ligneTableau(rue === '?' ? 'Adresse inconnue' : rue, [ville, sg.length ? `${pl(sg.length, 'signé')}${ca ? ' ' + euros(ca) : ''}` : ''].filter(Boolean).join(' · '), l, rue === '?' ? '' : cleRue(rue, ville)); }).join('')}</tbody></table>`;
     }
     if (plusieurs && qui === 'tous') {
       const gens = [...grouper(liste, x => x.v.auteur || '?').entries()].sort((a, b) => b[1].length - a[1].length);
@@ -1128,7 +1664,7 @@ function afficherBilan(zone) {
       html += `<ul class="journal">${l.map(({ p, v, repassage }) => `<li><button data-p="${p.id}">
         <span class="h">${heureTxt(v.date)}</span><span class="pastille ${v.statut}"></span>
         <span><span class="a">${esc(court(p) || 'Adresse inconnue')}</span>
-        <span class="m">${esc(STATUTS[v.statut].nom)}${repassage ? ' · repassage' : ''}${v.statut === 'r1' && p.r1 && p.r1.date ? ' · ' + esc(texteR1(p.r1)) : ''}${qui === 'tous' && v.auteur ? ' · ' + esc(v.auteur) : ''}</span>
+        <span class="m">${esc(STATUTS[v.statut].nom)}${repassage ? ' · repassage' : ''}${v.statut === 'r1' && etapeDe(p) && etapeDe(p) !== 'r1' ? ' → ' + esc(texteEtape(suiviDe(p).slice(-1)[0])) : v.statut === 'r1' && p.r1 && p.r1.date ? ' · ' + esc(texteR1(p.r1)) : ''}${qui === 'tous' && v.auteur ? ' · ' + esc(v.auteur) : ''}</span>
         ${v.note ? `<span class="note">${esc(v.note)}</span>` : ''}</span></button></li>`).join('')}</ul>`;
     }
     if (liste.length > montre.length) html += `<button class="b2" id="b-journal">Voir les ${liste.length - montre.length} autres passages</button>`;
@@ -1137,20 +1673,45 @@ function afficherBilan(zone) {
   zone.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { choixBilan.periode = b.dataset.per; journalComplet = false; garderChoix(); afficherBilan(zone); });
   zone.querySelectorAll('[data-qui]').forEach(b => b.onclick = () => { choixBilan.qui = b.dataset.qui; garderChoix(); afficherBilan(zone); });
   zone.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+  zone.querySelectorAll('[data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
   const bj = zone.querySelector('#b-journal'); if (bj) bj.onclick = () => { journalComplet = true; afficherBilan(zone); };
 }
 function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
 
 /* ───────── Menu : prénom, partage, sauvegarde ───────── */
-$('#b-jour').onclick = () => $('#b-menu').onclick();
+function listesMenu() {
+  const rond = k => `<span class="pastille ${k}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>`;
+  const item = (id, k, a, m, conseil) => `<li><button data-p="${id}">${rond(k)}<span class="txt"><span class="a">${esc(a)}</span><span class="m">${esc(m)}</span>${conseil ? `<span class="conseil">${esc(conseil)}</span>` : ''}</span></button></li>`;
+  let h = '';
+  const rap = aRappelerListe();
+  if (rap.length) h += `<h3>À rappeler (${rap.length})</h3><ul class="liste">${rap.map(p => {
+    const r = p.aRappeler, retard = r && r.date && dateRappel(r) < new Date();
+    return item(p.id, 'rappel', r && r.date ? texteRappel(r) : 'Pas encore de date', [r && r.nom, court(p), r && r.tel].filter(Boolean).join(' · '), retard ? 'En retard : appelle-le' : '');
+  }).join('')}</ul>`;
+  const rdv = rdvAVenir();
+  if (rdv.length) h += `<h3>Rendez-vous à venir</h3><ul class="liste">${rdv.map(x => item(x.p.id, 'r1', `${x.type} · ${texteR1(x.rdv)}`, [nomClient(x.p), court(x.p)].filter(Boolean).join(' · '))).join('')}</ul>`;
+  const enCours = portes().filter(p => { const et = etapeDe(p); return (et === 'devis') || (et === 'r2' && !(rdvR2(p) && dateR1(rdvR2(p)) > new Date())) || (et === 'r1' && p.r1 && p.r1.date && dateR1(p.r1) < new Date()); })
+    .sort((a, b) => ((suiviDe(a).slice(-1)[0] || {}).date || '') < ((suiviDe(b).slice(-1)[0] || {}).date || '') ? -1 : 1);
+  if (enCours.length) h += `<h3>Projets à faire avancer (${enCours.length})</h3><ul class="liste">${enCours.map(p => {
+    const et = etapeDe(p), der = suiviDe(p).slice(-1)[0];
+    const j = der ? Math.floor((Date.now() - new Date(der.date)) / 864e5) : 0;
+    const texte = et === 'r1' ? 'R1 fait : R2, devis ou signé ?' : et === 'r2' ? 'R2 fait : devis ou signé ?' : `Devis envoyé${der.montant ? ' · ' + euros(der.montant) : ''} · ${quand(der.date)}`;
+    return item(p.id, 'r1', texte, [nomClient(p), court(p)].filter(Boolean).join(' · '), et === 'devis' && j >= 7 ? 'À relancer' : '');
+  }).join('')}</ul>`;
+  const ref = ruesARefaire();
+  if (ref.length) h += `<h3>Rues à refaire</h3><ul class="liste">${ref.map(g => `<li><button data-rue="${esc(g.cle)}">${rond('absent')}<span class="txt"><span class="a">${esc(g.rue)}</span><span class="m">${esc(g.ville)} · faite le ${esc(new Date(etatRue(g.cle).terminee).toLocaleDateString('fr-FR'))}</span></span></button></li>`).join('')}</ul>`;
+  return h;
+}
+$('#b-jour').onclick = () => { $('#b-menu').onclick(); const b = $('#t-bilan'); if (b) $('#feuille').scrollTop = b.offsetTop - 10; };
 $('#b-menu').onclick = () => {
   const ps = portes(), tot = k => ps.filter(p => p.statut === k).length;
   const archives = chantiers(true).filter(c => c.archive);
   const derniere = etat.dernierExport ? quand(etat.dernierExport) : 'jamais';
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Prospection</h2>${BTN_FERMER}</div>
     <div class="pile">
+      ${listesMenu()}
+      <h3 id="t-bilan">Bilan</h3>
       <div id="bilan" class="bilan"></div>
-      ${r1AVenir().length ? `<h3>R1 à venir</h3><ul class="liste">${r1AVenir().map(p => `<li><button data-p="${p.id}"><span class="pastille r1" style="width:14px;height:14px;border-radius:50%;flex:none"></span><span class="txt"><span class="a">${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.nom, court(p)].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')}</ul>` : ''}
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
       <h3>Partager avec ton collègue</h3>
       <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
@@ -1159,7 +1720,9 @@ $('#b-menu').onclick = () => {
       ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const s = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${s.total} porte${s.total > 1 ? 's' : ''} · ${s.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
       ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
       <h3>Calendrier de l'iPhone</h3>
-      <p class="sous" style="margin:0">Les R1 passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : le rendez-vous s'inscrit tout seul dans le Calendrier. Ne renomme pas le raccourci, sinon la carte ne le trouve plus.</p>
+      <p class="sous" style="margin:0">Les R1, R2 et rappels passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : le rendez-vous s'inscrit tout seul dans le Calendrier. Ne renomme pas le raccourci, sinon la carte ne le trouve plus.</p>
+      <h3>Photos</h3>
+      <p class="sous" style="margin:0">Les photos restent sur ce téléphone : elles ne partent pas avec « Envoyer mes portes ». Pour en transmettre une, ouvre-la et touche « Partager ».</p>
       <h3>Légende</h3>
       <ul class="histo">${Object.entries(STATUTS).map(([k, s]) => `<li><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? ` <span class="quand">· ${esc(s.aide)}</span>` : ''}</span></li>`).join('')}</ul>
       <div class="ligne-btns"><button class="b2 danger" id="b-raz">Tout effacer</button></div>
@@ -1170,6 +1733,7 @@ $('#b-menu').onclick = () => {
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+    f.querySelectorAll('.pile > .liste [data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
     const r = f.querySelector('#b-raz');
     r.onclick = () => {
       if (r.dataset.ok) { const moi = etat.moi; etat = vide(); etat.moi = moi; sauver(); dessiner(); fermerFeuille(); toast('Tout est effacé'); }
@@ -1178,7 +1742,7 @@ $('#b-menu').onclick = () => {
   });
 };
 async function exporter() {
-  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes });
+  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes.map(p => Object.assign({}, p, { photos: undefined })), rues: etat.rues || {} });
   const nom = `prospection-${cleAdresse(etat.moi || 'moi').replace(/ /g, '-')}-${jourCle(new Date())}.json`;
   const fichier = new File([json], nom, { type: 'application/json' });
   try {
@@ -1215,21 +1779,34 @@ function fusionner(src) {
   for (const p of src.portes || []) {
     let loc = etat.portes.find(x => x.id === p.id);
     if (!loc && p.numero && !p.supprime) loc = etat.portes.find(x => !x.supprime && x.numero && cleAdresse(x.adresse) === cleAdresse(p.adresse));
-    if (!loc) { etat.portes.push(JSON.parse(JSON.stringify(p))); if (!p.supprime) ajouts++; continue; }
+    if (!loc) { const n = JSON.parse(JSON.stringify(p)); delete n.photos; etat.portes.push(n); if (!p.supprime) ajouts++; continue; }
     const avant = loc.visites.length, etaitSupprime = !!loc.supprime;
     const vus = new Set(loc.visites.map(cleVisite));
     for (const v of p.visites || []) if (!vus.has(cleVisite(v))) loc.visites.push(v);
     loc.visites.sort((a, b) => a.date < b.date ? -1 : 1);
     if (loc.visites.length) loc.statut = loc.visites[loc.visites.length - 1].statut;
     if (p.r1 && (!loc.r1 || (p.r1.cree || '') > (loc.r1.cree || '') || p.maj > loc.maj)) loc.r1 = p.r1;
+    if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
+    const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
+    const vusE = new Set((loc.suivi || []).map(cleE));
+    for (const e of p.suivi || []) if (!vusE.has(cleE(e))) (loc.suivi = loc.suivi || []).push(e);
+    if (loc.suivi) loc.suivi.sort((a, b) => a.date < b.date ? -1 : 1);
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
-    if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime) majs++;
+    if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi) majs++;
   }
+  // Rues terminées : la décision la plus récente gagne
+  etat.rues = etat.rues || {};
+  for (const [k, r] of Object.entries(src.rues || {})) if (!etat.rues[k] || r.maj > etat.rues[k].maj) etat.rues[k] = r;
   return { ajouts, majs };
 }
 
 /* ───────── Démarrage ───────── */
 dessiner();
+// Ménage : photos prises pour une porte jamais enregistrée (liste figée au démarrage, avant toute nouvelle photo)
+photosDB.cles().then(cles => {
+  const utiles = new Set(etat.portes.flatMap(p => (p.photos || []).map(x => x.id)).concat(photosEnAttente));
+  cles.filter(k => !utiles.has(k)).forEach(k => photosDB.suppr(k));
+}).catch(() => {});
 try { tournee = JSON.parse(localStorage.getItem(CLE_T)); } catch (e) { tournee = null; }
 if (tournee && tournee.rue) { document.body.classList.add('en-tournee'); setTimeout(() => afficherTournee(true), 300); } else tournee = null;
 if (portes().length || chantiers().length) {
