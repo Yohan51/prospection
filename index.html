@@ -202,6 +202,43 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
   position: fixed; z-index: 450; left: max(12px, env(safe-area-inset-left, 0px)); right: calc(max(12px, env(safe-area-inset-right, 0px)) + 58px);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 86px); max-width: 420px; background: var(--surface); border-radius: 12px; box-shadow: var(--ombre); padding: 10px 12px; font-size: 14px; color: var(--ardoise-2);
 }
+
+/* Carte R1 sur la fiche d'une porte */
+.carte-r1 { background: color-mix(in srgb, var(--st-r1) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--st-r1) 45%, transparent); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.carte-r1 .quand-r1 { font: 700 19px/1.15 var(--f-titre); }
+.carte-r1 .qui { font-size: 15px; color: var(--ardoise-2); }
+.grille2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Mode tournée de rue */
+body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
+.tournee {
+  position: fixed; z-index: 600; left: 0; right: 0; bottom: 0; background: var(--fond); border-radius: 18px 18px 0 0; box-shadow: var(--ombre);
+  padding: 10px max(14px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(14px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 10px;
+}
+@media (min-width: 720px) { .tournee { left: 50%; width: 560px; margin-left: -280px; } }
+.t-haut { display: flex; align-items: center; gap: 10px; }
+.t-haut .t-rue { flex: 1; min-width: 0; }
+.t-rue b { display: block; font: 700 18px/1.1 var(--f-titre); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-rue span { font-size: 13px; color: var(--doux); }
+.t-num { display: grid; grid-template-columns: 52px 1fr 52px; gap: 8px; align-items: center; }
+.t-num button.pas { height: 52px; border-radius: 12px; border: 1px solid var(--trait); background: var(--surface); font: 700 26px/1 var(--f-titre); }
+.t-num .centre { text-align: center; }
+.t-num .no { font: 700 40px/1 var(--f-titre); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.t-num .info { font-size: 13px; color: var(--doux); min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-num .info.deja { color: var(--st-absent); font-weight: 600; }
+.t-statuts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.t-statuts button { border: 0; border-radius: 12px; min-height: 54px; padding: 6px; background: var(--surface); font: 600 15px/1.1 var(--f-titre); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.t-statuts button .pastille { width: 14px; height: 14px; border-radius: 50%; }
+.t-statuts button[data-st="r1"] { background: color-mix(in srgb, var(--st-r1) 18%, var(--surface)); }
+.t-statuts button.sauter { color: var(--doux); }
+.t-statuts button[disabled] { opacity: .45; }
+.t-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.t-options .puce { font-size: 14px; padding: 6px 10px; }
+.t-suite { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.t-suite span { flex: none; display: inline-flex; align-items: center; gap: 4px; font: 600 13px/1 var(--f-texte); padding: 5px 8px; border-radius: 999px; background: var(--surface); color: var(--doux); font-variant-numeric: tabular-nums; }
+.t-suite span i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.t-suite span.ici { background: var(--ardoise); color: var(--surface); }
 </style>
 </head>
 <body>
@@ -241,6 +278,8 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
     Chantier
   </button>
 </div>
+
+<section class="tournee" id="tournee" hidden aria-label="Tournée de rue"></section>
 
 <div class="voile" id="voile"></div>
 <section class="feuille" id="feuille" role="dialog" aria-modal="true" aria-labelledby="f-titre"><div class="poignee"></div><div id="f-contenu"></div></section>
@@ -496,10 +535,22 @@ function feuillePorte(p, neuf) {
       ${p ? '' : `<label class="champ">Adresse<input id="i-adr" value="${esc(adresse)}" placeholder="N° et rue" autocomplete="off"></label>
         ${neuf.adr ? '' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
       <label class="champ">Note <span style="text-transform:none;letter-spacing:0;font-weight:500">(facultatif, avant de choisir)</span><input id="i-note" placeholder="ex. toit moussu, revenir le soir" autocomplete="off"></label>
+      ${p ? carteR1(p) : ''}
       <div class="statuts">${boutons}</div>
       ${p ? `<h3>Passages</h3><ul class="histo">${histo}</ul>` : ''}
+      ${(p ? p.rue : neuf.adr && neuf.adr.rue) ? '<button class="b2 plein" id="b-tournee" style="align-self:flex-start">Tournée de cette rue →</button>' : ''}
       <div class="ligne-btns">${liensItineraire(lat, lng)}${p ? '<button class="b2 danger" id="b-suppr">Supprimer</button>' : ''}</div>
     </div>`, f => {
+    if (p && p.r1) {
+      f.querySelector('#b-r1cal').onclick = () => ajouterAuCalendrier(p);
+      f.querySelector('#b-r1modif').onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
+      f.querySelector('#b-r1partage').onclick = () => partagerIcs(p);
+    }
+    const bt = f.querySelector('#b-tournee');
+    if (bt) bt.onclick = () => {
+      const src = p || neuf.adr;
+      demarrerTournee({ rue: src.rue, ville: src.ville, numero: parseInt(src.numero, 10) || 1, lat: p ? p.lat : neuf.lat, lng: p ? p.lng : neuf.lng });
+    };
     f.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
       const statut = b.dataset.st, note = f.querySelector('#i-note').value.trim();
       if (p) {
@@ -523,7 +574,7 @@ function feuillePorte(p, neuf) {
     };
   });
 }
-function ajouterVisite(p, statut, note) {
+function ajouterVisite(p, statut, note, apresAnnuler) {
   p.visites.push({ date: maintenant(), statut, note: note || '', auteur: etat.moi });
   p.statut = statut; p.maj = maintenant();
   if (marqueurTemp) { carte.removeLayer(marqueurTemp); marqueurTemp = null; }
@@ -533,8 +584,132 @@ function ajouterVisite(p, statut, note) {
       p.visites.pop();
       if (p.visites.length) { p.statut = p.visites[p.visites.length - 1].statut; } else { p.supprime = true; }
       p.maj = maintenant(); sauver(); dessiner();
+      apresAnnuler && apresAnnuler();
     },
   });
+  // Un R1 pris : on note le rendez-vous tout de suite, pendant qu'on est devant la porte
+  if (statut === 'r1') feuilleR1(p, tournee ? () => afficherTournee(false) : null);
+}
+
+/* ───────── R1 → calendrier ───────── */
+const pad = n => String(n).padStart(2, '0');
+const isoLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function dateR1(r) { return new Date(`${r.date}T${r.heure || '18:00'}:00`); }
+function texteR1(r) {
+  const d = dateR1(r);
+  const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return `${jour.charAt(0).toUpperCase() + jour.slice(1)} à ${(r.heure || '18:00').replace(':', 'h')}`;
+}
+function feuilleR1(p, apres) {
+  const r = p.r1 || {};
+  const demain = new Date(Date.now() + 864e5);
+  const derniereNote = [...p.visites].reverse().find(v => v.note);
+  ouvrirFeuille(`
+    <div class="entete"><h2 id="f-titre">${r.date ? 'Modifier le R1' : 'R1 pris 🎉'}</h2>${BTN_FERMER}</div>
+    <p class="sous">${esc(court(p))}${p.ville ? ' · ' + esc(p.ville) : ''}</p>
+    <div class="pile">
+      <label class="champ">Nom du client<input id="r-nom" value="${esc(r.nom || '')}" placeholder="ex. M. et Mme Martin" autocomplete="off"></label>
+      <label class="champ">Téléphone<input id="r-tel" type="tel" value="${esc(r.tel || '')}" placeholder="06 12 34 56 78" autocomplete="off"></label>
+      <div class="grille2">
+        <label class="champ">Date<input id="r-date" type="date" value="${esc(r.date || isoLocal(demain))}"></label>
+        <label class="champ">Heure<input id="r-heure" type="time" value="${esc(r.heure || '18:00')}" step="900"></label>
+      </div>
+      <div class="champ" style="gap:8px">Durée<div class="puces" id="r-duree">${[45, 60, 90].map(m => `<button class="puce" data-m="${m}" aria-pressed="${m === (r.duree || 60)}">${m < 60 ? m + ' min' : m === 60 ? '1 h' : '1 h 30'}</button>`).join('')}</div></div>
+      <label class="champ">Besoin, à noter pour le R1<input id="r-besoin" value="${esc(r.besoin || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. nettoyage vapeur + hydrofuge, toit moussu côté nord" autocomplete="off"></label>
+      <button class="b2 jaune" id="r-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>
+      <div class="ligne-btns"><button class="b2" id="r-ok">Enregistrer seulement</button><button class="b2" id="r-plus-tard">Plus tard</button></div>
+    </div>`, f => {
+    let duree = r.duree || 60;
+    f.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { duree = +b.dataset.m; f.querySelectorAll('[data-m]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    const lire = () => ({
+      nom: f.querySelector('#r-nom').value.trim(), tel: f.querySelector('#r-tel').value.trim(),
+      date: f.querySelector('#r-date').value, heure: f.querySelector('#r-heure').value || '18:00', duree,
+      besoin: f.querySelector('#r-besoin').value.trim(), cree: r.cree || maintenant(), par: etat.moi,
+    });
+    const enregistrer = () => {
+      const n = lire();
+      if (!n.date) { toast('Choisis la date du R1.'); return null; }
+      p.r1 = n; p.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
+      return n;
+    };
+    f.querySelector('#r-ok').onclick = () => { if (enregistrer()) { toast(`R1 noté : ${texteR1(p.r1)}`); apres && apres(); } };
+    f.querySelector('#r-cal').onclick = () => { if (enregistrer()) { ajouterAuCalendrier(p); apres && apres(); } };
+    f.querySelector('#r-plus-tard').onclick = () => { fermerFeuille(); apres && apres(); };
+    f.querySelector('.fermer').onclick = () => { fermerFeuille(); apres && apres(); };
+  });
+}
+function icsTexte(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+function icsPlier(ligne) {
+  // Lignes de 75 octets maximum (les accents comptent double)
+  const enc = new TextEncoder(), out = []; let cour = '', taille = 0;
+  for (const c of ligne) {
+    const t = enc.encode(c).length;
+    if (taille + t > 74) {
+      const garde = cour.endsWith('\\') ? '\\' : '';   // ne pas couper « \, » en deux
+      out.push(garde ? cour.slice(0, -1) : cour); cour = ' ' + garde; taille = 1 + garde.length;
+    }
+    cour += c; taille += t;
+  }
+  out.push(cour); return out.join('\r\n');
+}
+const icsDate = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+function fabriquerIcs(p) {
+  const r = p.r1, debut = dateR1(r), fin = new Date(+debut + (r.duree || 60) * 60000);
+  const ch = chantierProche(p.lat, p.lng);
+  const desc = [
+    r.tel && `Tél. : ${r.tel}`,
+    r.besoin && `Besoin : ${r.besoin}`,
+    `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`,
+  ].filter(Boolean).join('\n');
+  const lignes = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Carte de prospection//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${p.id}-r1@carte-prospection`,
+    `DTSTAMP:${icsDate(new Date())}`,
+    `DTSTART:${icsDate(debut)}`,
+    `DTEND:${icsDate(fin)}`,
+    `SUMMARY:${icsTexte(`R1 – ${r.nom || 'client'} – ${court(p)}`)}`,
+    `LOCATION:${icsTexte(p.adresse)}`,
+    `GEO:${p.lat.toFixed(6)};${p.lng.toFixed(6)}`,
+    `DESCRIPTION:${icsTexte(desc)}`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${icsTexte('R1 dans 1 heure : ' + court(p))}`, 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR',
+  ];
+  return lignes.map(icsPlier).join('\r\n') + '\r\n';
+}
+window.ouvrirUrl = u => { location.href = u; };
+async function ajouterAuCalendrier(p) {
+  const ics = fabriquerIcs(p);
+  const nom = `R1-${cleAdresse(p.r1.nom || court(p)).replace(/ /g, '-').slice(0, 40) || 'client'}.ics`;
+  // iPhone : ouvrir le .ics affiche directement « Ajouter au calendrier »
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    ouvrirUrl('data:text/calendar;charset=utf-8,' + encodeURIComponent(ics));
+    toast('Si le calendrier ne s’ouvre pas : bouton « Envoyer » sur la fiche', null);
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = nom;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  toast('Rendez-vous envoyé au calendrier');
+}
+async function partagerIcs(p) {
+  const f = new File([fabriquerIcs(p)], 'R1.ics', { type: 'text/calendar' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'R1' });
+    else ajouterAuCalendrier(p);
+  } catch (e) {}
+}
+function carteR1(p) {
+  const r = p.r1; if (!r || !r.date) return '';
+  const passe = dateR1(r) < new Date();
+  return `<div class="carte-r1"><span class="quand-r1">${passe ? 'R1 passé : ' : 'R1 '}${esc(texteR1(r))}</span>
+    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>
+    <div class="ligne-btns">${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
+      <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer</button></div></div>`;
+}
+function r1AVenir() {
+  return portes().filter(p => p.r1 && p.r1.date && dateR1(p.r1) > new Date(Date.now() - 3 * 3600e3))
+    .sort((a, b) => dateR1(a.r1) - dateR1(b.r1));
 }
 carte.on('click', e => nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte'));
 $('#b-ici').onclick = async () => {
@@ -545,6 +720,142 @@ $('#b-ici').onclick = async () => {
   carte.setView([pos.lat, pos.lng], Math.max(carte.getZoom(), 18));
   nouvellePorteA(pos.lat, pos.lng, 'gps');
 };
+
+/* ───────── Tournée de rue ───────── */
+const CLE_T = CLE + ':tournee';
+const REGLEES = ['refus', 'stop', 'r1'];
+let tournee = null;
+const cacheNum = new Map();
+function sauverTournee() { try { tournee ? localStorage.setItem(CLE_T, JSON.stringify(tournee)) : localStorage.removeItem(CLE_T); } catch (e) {} }
+function porteDuNumero(n) {
+  const k = cleAdresse(tournee.rue);
+  return portes().find(p => parseInt(p.numero, 10) === n && cleAdresse(p.rue) === k && (!tournee.ville || !p.ville || cleAdresse(p.ville) === cleAdresse(tournee.ville)));
+}
+async function adresseDuNumero(n) {
+  const cle = `${cleAdresse(tournee.rue)}|${cleAdresse(tournee.ville)}|${n}`;
+  if (cacheNum.has(cle)) return cacheNum.get(cle);
+  const promesse = (async () => {
+    try {
+      const pres = tournee.lat ? `&lat=${tournee.lat}&lon=${tournee.lng}` : '';
+      const j = await geo(`${GEO}/search?q=${encodeURIComponent(`${n} ${tournee.rue} ${tournee.ville || ''}`)}&limit=5&index=address${pres}`);
+      const f = (j.features || []).map(adresseDe).find(a => parseInt(a.numero, 10) === n && String(a.numero).replace(/\D/g, '') === String(n) && cleAdresse(a.rue) === cleAdresse(tournee.rue));
+      return f || null;
+    } catch (e) { cacheNum.delete(cle); return undefined; }   // undefined = réseau indisponible
+  })();
+  cacheNum.set(cle, promesse);
+  return promesse;
+}
+function demarrerTournee(t) {
+  tournee = { rue: t.rue, ville: t.ville || '', numero: t.numero, pas: 2, sens: 1, sauter: true, lat: t.lat, lng: t.lng, debut: maintenant(), faites: 0, ouvertes: 0, r1: 0 };
+  sauverTournee(); fermerFeuille();
+  document.body.classList.add('en-tournee');
+  afficherTournee(true);
+}
+function finirTournee() {
+  const t = tournee; tournee = null; sauverTournee();
+  document.body.classList.remove('en-tournee');
+  $('#tournee').hidden = true; placerBoutonPosition();
+  if (t.faites) toast(`Tournée terminée : ${t.faites} porte${t.faites > 1 ? 's' : ''}, ${t.ouvertes} ouverte${t.ouvertes > 1 ? 's' : ''}, ${t.r1} R1`);
+}
+function numeroSuivant(depuis, combien = 1) {
+  let n = depuis;
+  for (let i = 0; i < 400 && combien > 0; i++) {
+    n += tournee.pas * tournee.sens;
+    if (n < 1) return null;
+    const p = porteDuNumero(n);
+    if (tournee.sauter && p && REGLEES.includes(p.statut)) continue;
+    combien--;
+  }
+  return n;
+}
+function placerBoutonPosition() {
+  const h = tournee && !$('#tournee').hidden ? $('#tournee').offsetHeight : 0;
+  $('.cote').style.bottom = h ? `${h + 12}px` : '';
+  const att = document.querySelector('.leaflet-bottom.leaflet-right');
+  if (att) att.style.bottom = h ? `${h - 4}px` : '';
+}
+async function afficherTournee(centrer) {
+  if (!tournee) return;
+  const n = tournee.numero, p = porteDuNumero(n);
+  const cote = tournee.pas === 1 ? 'les deux côtés' : (n % 2 ? 'côté impair' : 'côté pair');
+  const suite = []; let k = n;
+  for (let i = 0; i < 6; i++) { k = numeroSuivant(k); if (k == null) break; suite.push(k); }
+  const pastille = q => { const x = porteDuNumero(q); return x ? `<i class="p-${x.statut}"></i>` : ''; };
+  const info = p ? `Déjà noté : ${STATUTS[p.statut].nom.toLowerCase()} · ${quand(p.visites[p.visites.length - 1].date)}` : 'Recherche de l’adresse…';
+  const el = $('#tournee');
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="t-haut"><div class="t-rue"><b>${esc(tournee.rue)}</b><span>${esc(tournee.ville)}${tournee.ville ? ' · ' : ''}${cote} · ${tournee.sens > 0 ? 'numéros croissants' : 'numéros décroissants'}</span></div>
+      <button class="b2" id="t-fin">Terminer</button></div>
+    <div class="t-num"><button class="pas" id="t-moins" aria-label="Numéro précédent">−</button>
+      <div class="centre"><div class="no">N° ${n}</div><div class="info${p ? ' deja' : ''}" id="t-info">${esc(info)}</div></div>
+      <button class="pas" id="t-plus" aria-label="Numéro suivant">+</button></div>
+    <div class="t-statuts">
+      ${['absent', 'refus', 'rappel', 'r1', 'stop'].map(k => `<button data-st="${k}"><span class="pastille ${k}"></span>${esc(k === 'stop' ? 'Stop pub' : STATUTS[k].nom)}</button>`).join('')}
+      <button class="sauter" id="t-sauter">Pas de porte<br>→ suivant</button>
+    </div>
+    <div class="t-suite" aria-label="Numéros suivants"><span class="ici">${n}</span>${suite.map(q => `<span>${q}${pastille(q)}</span>`).join('')}</div>
+    <div class="t-options">
+      <button class="puce" id="t-cote" aria-pressed="${tournee.pas === 2}">${tournee.pas === 2 ? 'Un seul côté' : 'Les deux côtés'}</button>
+      <button class="puce" id="t-sens">${tournee.sens > 0 ? 'Sens ↑' : 'Sens ↓'}</button>
+      <button class="puce" id="t-reglees" aria-pressed="${tournee.sauter}">Sauter les portes réglées</button>
+    </div>`;
+  placerBoutonPosition();
+  const aller = m => { if (m == null || m < 1) return; tournee.numero = m; sauverTournee(); afficherTournee(true); };
+  el.querySelector('#t-fin').onclick = finirTournee;
+  el.querySelector('#t-moins').onclick = () => aller(Math.max(1, n - tournee.pas));
+  el.querySelector('#t-plus').onclick = () => aller(n + tournee.pas);
+  el.querySelector('#t-sauter').onclick = () => aller(numeroSuivant(n));
+  el.querySelector('#t-cote').onclick = () => { tournee.pas = tournee.pas === 2 ? 1 : 2; sauverTournee(); afficherTournee(); };
+  el.querySelector('#t-sens').onclick = () => { tournee.sens *= -1; sauverTournee(); afficherTournee(); };
+  el.querySelector('#t-reglees').onclick = () => { tournee.sauter = !tournee.sauter; sauverTournee(); afficherTournee(); };
+  el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => noterNumero(n, b.dataset.st));
+
+  // Adresse du numéro (IGN), et des suivants en avance
+  const adr = p ? { lat: p.lat, lng: p.lng } : await adresseDuNumero(n);
+  suite.slice(0, 2).forEach(q => adresseDuNumero(q));
+  if (!tournee || tournee.numero !== n) return;
+  const inf = $('#t-info');
+  if (!p && inf) inf.textContent = adr ? 'Nouvelle porte' : adr === null ? 'Numéro introuvable : il n’existe peut-être pas' : 'Hors réseau : la porte sera placée à ta position';
+  if (adr && adr.lat != null) {
+    tournee.lat = adr.lat; tournee.lng = adr.lng;
+    if (marqueurTemp) carte.removeLayer(marqueurTemp);
+    marqueurTemp = L.marker([adr.lat, adr.lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: `<div class="m-porte temp">${n}</div>` }), interactive: false, zIndexOffset: 2000 }).addTo(carte);
+    if (centrer !== false) {
+      const z = Math.max(carte.getZoom(), 18);
+      const pt = carte.project([adr.lat, adr.lng], z).add([0, el.offsetHeight / 2 - 40]);
+      carte.setView(carte.unproject(pt, z), z, { animate: true });
+    }
+  }
+}
+async function noterNumero(n, statut) {
+  if (!tournee) return;
+  const boutons = document.querySelectorAll('#tournee [data-st]');
+  boutons.forEach(b => b.disabled = true);
+  let p = porteDuNumero(n);
+  if (!p) {
+    let adr = await adresseDuNumero(n);
+    let lat = adr && adr.lat, lng = adr && adr.lng, approx = false;
+    if (lat == null) {
+      const pos = position && Date.now() - position.t < 60000 ? position : null;
+      lat = pos ? pos.lat : tournee.lat; lng = pos ? pos.lng : tournee.lng; approx = true;
+      if (lat == null) { const c = carte.getCenter(); lat = c.lat; lng = c.lng; }
+    }
+    p = {
+      id: uid(), adresse: adr ? adr.label : `${n} ${tournee.rue}${tournee.ville ? ' ' + tournee.ville : ''}`, numero: String(n),
+      rue: tournee.rue, ville: tournee.ville, lat, lng, approx, statut, visites: [], auteur: etat.moi, cree: maintenant(), maj: maintenant(),
+    };
+    etat.portes.push(p);
+  }
+  const avant = { numero: n, faites: tournee.faites, ouvertes: tournee.ouvertes, r1: tournee.r1 };
+  tournee.faites++; if (statut !== 'absent') tournee.ouvertes++; if (statut === 'r1') tournee.r1++;
+  const suivant = numeroSuivant(n);
+  if (suivant != null) tournee.numero = suivant;
+  sauverTournee();
+  ajouterVisite(p, statut, '', () => { if (tournee) { Object.assign(tournee, avant); sauverTournee(); afficherTournee(true); } });
+  afficherTournee(true);
+}
+window.addEventListener('resize', placerBoutonPosition);
 
 /* ───────── À repasser ───────── */
 function aRepasser() {
@@ -682,6 +993,7 @@ $('#b-menu').onclick = () => {
         <div><b>${tot('rappel')}</b><span>intéressés</span></div>
         <div><b>${tot('r1')}</b><span>R1 pris</span></div>
       </div>
+      ${r1AVenir().length ? `<h3>R1 à venir</h3><ul class="liste">${r1AVenir().map(p => `<li><button data-p="${p.id}"><span class="pastille r1" style="width:14px;height:14px;border-radius:50%;flex:none"></span><span class="txt"><span class="a">${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.nom, court(p)].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')}</ul>` : ''}
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
       <h3>Partager avec ton collègue</h3>
       <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
@@ -697,6 +1009,7 @@ $('#b-menu').onclick = () => {
     f.querySelector('#b-export').onclick = exporter;
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
+    f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
     const r = f.querySelector('#b-raz');
     r.onclick = () => {
       if (r.dataset.ok) { const moi = etat.moi; etat = vide(); etat.moi = moi; sauver(); dessiner(); fermerFeuille(); toast('Tout est effacé'); }
@@ -748,6 +1061,7 @@ function fusionner(src) {
     for (const v of p.visites || []) if (!vus.has(cleVisite(v))) loc.visites.push(v);
     loc.visites.sort((a, b) => a.date < b.date ? -1 : 1);
     if (loc.visites.length) loc.statut = loc.visites[loc.visites.length - 1].statut;
+    if (p.r1 && (!loc.r1 || (p.r1.cree || '') > (loc.r1.cree || '') || p.maj > loc.maj)) loc.r1 = p.r1;
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime) majs++;
   }
@@ -756,6 +1070,8 @@ function fusionner(src) {
 
 /* ───────── Démarrage ───────── */
 dessiner();
+try { tournee = JSON.parse(localStorage.getItem(CLE_T)); } catch (e) { tournee = null; }
+if (tournee && tournee.rue) { document.body.classList.add('en-tournee'); setTimeout(() => afficherTournee(true), 300); } else tournee = null;
 if (portes().length || chantiers().length) {
   const pts = [...portes().map(p => [p.lat, p.lng]), ...chantiers().map(c => [c.lat, c.lng])];
   carte.fitBounds(pts, { maxZoom: 17, padding: [40, 40] });
