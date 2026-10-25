@@ -167,6 +167,35 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .puce { border: 1px solid var(--trait); background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 15px/1 var(--f-titre); }
 .puce[aria-pressed="true"] { background: var(--ardoise); color: var(--surface); border-color: var(--ardoise); }
 
+/* Bilan détaillé (menu) */
+.bilan { display: flex; flex-direction: column; gap: 12px; }
+.bilan .chiffres span { line-height: 1.15; display: block; margin-top: 3px; }
+.barre { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--trait); gap: 2px; }
+.barre i { display: block; min-width: 4px; }
+.repartition { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; }
+.repartition li { display: flex; align-items: center; gap: 6px; }
+.repartition .pastille { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.repartition b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.taux { background: var(--surface); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.taux div { display: flex; justify-content: space-between; gap: 10px; }
+.taux span { color: var(--doux); }
+.taux b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tableau { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 12px; overflow: hidden; font-size: 14px; font-variant-numeric: tabular-nums; }
+.tableau th { font: 600 12px/1 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); text-align: right; padding: 9px 8px 6px; }
+.tableau td { padding: 7px 8px; text-align: right; border-top: 1px solid var(--trait); }
+.tableau th:first-child, .tableau td:first-child { text-align: left; }
+.tableau td:first-child { max-width: 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tableau td small { display: block; color: var(--doux); font-size: 12px; }
+.tableau td.r1 { color: var(--st-r1); font-weight: 700; }
+.journal-jour { font: 600 13px/1 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); margin: 6px 0 -2px; }
+.journal { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.journal button { width: 100%; border: 0; background: var(--surface); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: 44px 10px 1fr; gap: 8px; align-items: baseline; text-align: left; font-size: 14px; }
+.journal .h { color: var(--doux); font-variant-numeric: tabular-nums; }
+.journal .pastille { width: 10px; height: 10px; border-radius: 50%; transform: translateY(1px); }
+.journal .a { font-weight: 600; }
+.journal .m { display: block; color: var(--doux); font-size: 13px; }
+.journal .note { display: block; color: var(--ardoise-2); font-size: 13px; }
+
 .resultats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .resultats button { width: 100%; text-align: left; border: 0; background: var(--surface); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
 .resultats button[aria-pressed="true"] { outline: 2px solid var(--ardoise); }
@@ -999,6 +1028,119 @@ function ouvrirChantier(id) {
   carte.fitBounds(L.latLng(c.lat, c.lng).toBounds((c.rayon || 300) * 2.3), { paddingBottomRight: [0, 260] });
 }
 
+/* ───────── Bilan détaillé ───────── */
+const PERIODES = { jour: 'Aujourd’hui', hier: 'Hier', semaine: '7 jours', mois: 'Ce mois', tout: 'Tout' };
+let choixBilan = { periode: 'jour', qui: 'moi' };
+try { Object.assign(choixBilan, JSON.parse(localStorage.getItem(CLE + ':bilan')) || {}); } catch (e) {}
+function bornesPeriode(k) {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  const fin = new Date(d); fin.setDate(fin.getDate() + 1);
+  if (k === 'hier') { const h = new Date(d); h.setDate(h.getDate() - 1); return [h, d]; }
+  if (k === 'semaine') d.setDate(d.getDate() - 6);
+  else if (k === 'mois') d.setDate(1);
+  else if (k === 'tout') return [new Date(0), new Date(8.64e15)];
+  return [d, fin];
+}
+const pct = (a, b) => b ? `${Math.round(100 * a / b)} %` : '–';
+const pl = (n, mot, plur) => `${n} ${n > 1 ? (plur || mot + 's') : mot}`;
+const heureTxt = iso => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+function passagesBilan(periode, qui) {
+  const [deb, fin] = bornesPeriode(periode), out = [];
+  for (const p of portes()) p.visites.forEach((v, i) => {
+    const d = new Date(v.date);
+    if (d < deb || d >= fin) return;
+    if (qui === 'moi' && etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi)) return;
+    out.push({ p, v, repassage: i > 0 });
+  });
+  return out.sort((a, b) => a.v.date < b.v.date ? 1 : -1);
+}
+function compter(liste) {
+  const s = { total: liste.length, absent: 0, rappel: 0, r1: 0, refus: 0, stop: 0, repassages: 0 };
+  for (const { v, repassage } of liste) { s[v.statut] = (s[v.statut] || 0) + 1; if (repassage) s.repassages++; }
+  s.ouvertes = s.total - s.absent;
+  return s;
+}
+function grouper(liste, cle) {
+  const m = new Map();
+  for (const x of liste) { const k = cle(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }
+  return m;
+}
+function ligneTableau(nom, sous, liste) {
+  const s = compter(liste);
+  return `<tr><td>${esc(nom)}${sous ? `<small>${esc(sous)}</small>` : ''}</td><td>${s.total}</td><td>${s.ouvertes}</td><td>${s.rappel}</td><td class="${s.r1 ? 'r1' : ''}">${s.r1}</td></tr>`;
+}
+const enteteTableau = premier => `<thead><tr><th>${premier}</th><th>Portes</th><th>Ouv.</th><th>Int.</th><th>R1</th></tr></thead>`;
+let journalComplet = false;
+function afficherBilan(zone) {
+  const { periode, qui } = choixBilan;
+  const auteurs = new Set(); for (const p of portes()) for (const v of p.visites) if (v.auteur) auteurs.add(cleAdresse(v.auteur));
+  const plusieurs = auteurs.size > 1 || (auteurs.size === 1 && etat.moi && !auteurs.has(cleAdresse(etat.moi)));
+  const liste = passagesBilan(periode, plusieurs ? qui : 'tous');
+  const s = compter(liste);
+  const puces = `<div class="puces">${Object.entries(PERIODES).map(([k, t]) => `<button class="puce" data-per="${k}" aria-pressed="${k === periode}">${t}</button>`).join('')}</div>
+    ${plusieurs ? `<div class="puces"><button class="puce" data-qui="moi" aria-pressed="${qui === 'moi'}">Moi${etat.moi ? ' (' + esc(etat.moi) + ')' : ''}</button><button class="puce" data-qui="tous" aria-pressed="${qui === 'tous'}">Toute l’équipe</button></div>` : ''}`;
+  if (!s.total) {
+    zone.innerHTML = `${puces}<p class="vide">Aucune porte frappée sur cette période.</p>`;
+  } else {
+    const ordre = ['r1', 'rappel', 'refus', 'stop', 'absent'];
+    const portesDistinctes = new Set(liste.map(x => x.p.id)).size;
+    const jours = grouper(liste, x => jourCle(x.v.date));
+    // temps passé : du premier au dernier passage de chaque journée
+    let minutes = 0;
+    for (const l of jours.values()) minutes += (new Date(l[0].v.date) - new Date(l[l.length - 1].v.date)) / 6e4;
+    const duree = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(Math.round(minutes % 60)).padStart(2, '0')}` : `${Math.round(minutes)} min`;
+    const rythme = minutes >= 10 ? `${(s.total / (minutes / 60)).toFixed(1).replace('.', ',')} portes / heure` : '';
+    let html = `${puces}
+      <div class="chiffres">
+        <div><b>${s.total}</b><span>portes frappées</span></div>
+        <div><b>${s.ouvertes}</b><span>ouvertes</span></div>
+        <div><b>${s.rappel}</b><span>intéressés</span></div>
+        <div><b>${s.r1}</b><span>R1 pris</span></div>
+      </div>
+      <div class="barre" role="img" aria-label="Répartition des portes">${ordre.filter(k => s[k]).map(k => `<i class="p-${k}" style="flex:${s[k]}"></i>`).join('')}</div>
+      <ul class="repartition">${ordre.map(k => `<li><span class="pastille ${k}"></span>${esc(STATUTS[k].nom)}<b>${s[k]}</b></li>`).join('')}</ul>
+      <div class="taux">
+        <div><span>Taux d’ouverture</span><b>${pct(s.ouvertes, s.total)}</b></div>
+        <div><span>R1 sur portes ouvertes</span><b>${pct(s.r1, s.ouvertes)}</b></div>
+        <div><span>Intéressés + R1 sur portes ouvertes</span><b>${pct(s.r1 + s.rappel, s.ouvertes)}</b></div>
+        <div><span>Portes pour 1 R1</span><b>${s.r1 ? (s.total / s.r1).toFixed(1).replace('.', ',').replace(',0', '') : '–'}</b></div>
+        <div><span>Adresses différentes</span><b>${portesDistinctes}${s.repassages ? ` · ${pl(s.repassages, 'repassage')}` : ''}</b></div>
+        ${minutes >= 1 ? `<div><span>Temps sur le terrain</span><b>${duree}${jours.size > 1 ? ` sur ${jours.size} jours` : ''}</b></div>` : ''}
+        ${rythme ? `<div><span>Rythme</span><b>${rythme}</b></div>` : ''}
+      </div>`;
+    if (jours.size > 1) {
+      html += `<h3>Jour par jour</h3><table class="tableau">${enteteTableau('Jour')}<tbody>${[...jours.values()].map(l =>
+        ligneTableau(new Date(l[0].v.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }), `${heureTxt(l[l.length - 1].v.date)} → ${heureTxt(l[0].v.date)}`, l)).join('')}</tbody></table>`;
+    }
+    const rues = [...grouper(liste, x => x.p.rue ? `${x.p.rue}|${x.p.ville || ''}` : '?').entries()].sort((a, b) => b[1].length - a[1].length);
+    if (rues.length > 1 || rues[0][0] !== '?') {
+      html += `<h3>Par rue</h3><table class="tableau">${enteteTableau('Rue')}<tbody>${rues.slice(0, 12).map(([k, l]) => {
+        const [rue, ville] = k.split('|'); return ligneTableau(rue === '?' ? 'Adresse inconnue' : rue, ville, l); }).join('')}</tbody></table>`;
+    }
+    if (plusieurs && qui === 'tous') {
+      const gens = [...grouper(liste, x => x.v.auteur || '?').entries()].sort((a, b) => b[1].length - a[1].length);
+      html += `<h3>Par commercial</h3><table class="tableau">${enteteTableau('Qui')}<tbody>${gens.map(([k, l]) => ligneTableau(k === '?' ? 'Sans prénom' : k, '', l)).join('')}</tbody></table>`;
+    }
+    const LIMITE = 40, montre = journalComplet ? liste : liste.slice(0, LIMITE);
+    html += `<h3>Détail des passages</h3>`;
+    for (const [j, l] of grouper(montre, x => jourCle(x.v.date))) {
+      if (periode !== 'jour' && periode !== 'hier') html += `<p class="journal-jour">${esc(new Date(l[0].v.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>`;
+      html += `<ul class="journal">${l.map(({ p, v, repassage }) => `<li><button data-p="${p.id}">
+        <span class="h">${heureTxt(v.date)}</span><span class="pastille ${v.statut}"></span>
+        <span><span class="a">${esc(court(p) || 'Adresse inconnue')}</span>
+        <span class="m">${esc(STATUTS[v.statut].nom)}${repassage ? ' · repassage' : ''}${v.statut === 'r1' && p.r1 && p.r1.date ? ' · ' + esc(texteR1(p.r1)) : ''}${qui === 'tous' && v.auteur ? ' · ' + esc(v.auteur) : ''}</span>
+        ${v.note ? `<span class="note">${esc(v.note)}</span>` : ''}</span></button></li>`).join('')}</ul>`;
+    }
+    if (liste.length > montre.length) html += `<button class="b2" id="b-journal">Voir les ${liste.length - montre.length} autres passages</button>`;
+    zone.innerHTML = html;
+  }
+  zone.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { choixBilan.periode = b.dataset.per; journalComplet = false; garderChoix(); afficherBilan(zone); });
+  zone.querySelectorAll('[data-qui]').forEach(b => b.onclick = () => { choixBilan.qui = b.dataset.qui; garderChoix(); afficherBilan(zone); });
+  zone.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+  const bj = zone.querySelector('#b-journal'); if (bj) bj.onclick = () => { journalComplet = true; afficherBilan(zone); };
+}
+function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
+
 /* ───────── Menu : prénom, partage, sauvegarde ───────── */
 $('#b-jour').onclick = () => $('#b-menu').onclick();
 $('#b-menu').onclick = () => {
@@ -1007,12 +1149,7 @@ $('#b-menu').onclick = () => {
   const derniere = etat.dernierExport ? quand(etat.dernierExport) : 'jamais';
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Prospection</h2>${BTN_FERMER}</div>
     <div class="pile">
-      <div class="chiffres">
-        <div><b>${ps.length}</b><span>portes</span></div>
-        <div><b>${tot('absent')}</b><span>absents</span></div>
-        <div><b>${tot('rappel')}</b><span>intéressés</span></div>
-        <div><b>${tot('r1')}</b><span>R1 pris</span></div>
-      </div>
+      <div id="bilan" class="bilan"></div>
       ${r1AVenir().length ? `<h3>R1 à venir</h3><ul class="liste">${r1AVenir().map(p => `<li><button data-p="${p.id}"><span class="pastille r1" style="width:14px;height:14px;border-radius:50%;flex:none"></span><span class="txt"><span class="a">${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.nom, court(p)].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')}</ul>` : ''}
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
       <h3>Partager avec ton collègue</h3>
@@ -1022,11 +1159,12 @@ $('#b-menu').onclick = () => {
       ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const s = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${s.total} porte${s.total > 1 ? 's' : ''} · ${s.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
       ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
       <h3>Calendrier de l'iPhone</h3>
-      <p class="sous" style="margin:0">Les R1 passent par l'appli Raccourcis : crée une fois le raccourci « ${NOM_RACCOURCI} » (2 actions, voir le mode d'emploi). Ensuite, « Ajouter au calendrier » inscrit le rendez-vous en une touche.</p>
+      <p class="sous" style="margin:0">Les R1 passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : le rendez-vous s'inscrit tout seul dans le Calendrier. Ne renomme pas le raccourci, sinon la carte ne le trouve plus.</p>
       <h3>Légende</h3>
       <ul class="histo">${Object.entries(STATUTS).map(([k, s]) => `<li><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? ` <span class="quand">· ${esc(s.aide)}</span>` : ''}</span></li>`).join('')}</ul>
       <div class="ligne-btns"><button class="b2 danger" id="b-raz">Tout effacer</button></div>
     </div>`, f => {
+    afficherBilan(f.querySelector('#bilan'));
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
