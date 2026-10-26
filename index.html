@@ -187,6 +187,21 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .menu-btn { position: relative; }
 .menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
 
+/* Besoins du client : menu déroulant à cases */
+.deroulant { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--trait); border-radius: 10px; padding: 11px 12px;
+  font: 500 17px/1.3 var(--f-texte); letter-spacing: 0; text-transform: none; color: var(--ardoise); }
+.deroulant span { flex: 1; min-width: 0; }
+.deroulant span.vide-choix { color: var(--doux); }
+.deroulant svg { width: 18px; height: 18px; flex: none; transition: transform .15s; }
+.deroulant[aria-expanded="true"] { border-color: var(--ardoise); }
+.deroulant[aria-expanded="true"] svg { transform: rotate(180deg); }
+.choix-besoins { background: var(--surface); border: 1px solid var(--trait); border-radius: 10px; padding: 4px 0; display: flex; flex-direction: column; text-transform: none; letter-spacing: 0; }
+.coche { display: flex; align-items: center; gap: 12px; padding: 10px 12px; font: 500 16px/1.25 var(--f-texte); color: var(--ardoise); cursor: pointer; }
+.coche + .coche { border-top: 1px solid var(--trait); }
+.coche input { width: 22px; height: 22px; margin: 0; accent-color: var(--st-r1); flex: none; }
+.etiquettes { display: flex; flex-wrap: wrap; gap: 4px; }
+.etiquettes span { font: 600 13px/1 var(--f-texte); padding: 5px 8px; border-radius: 999px; background: color-mix(in srgb, var(--st-rappel) 14%, var(--surface)); color: var(--ardoise); }
+
 /* Secteurs */
 .secteur { stroke-opacity: .5; fill-opacity: .4; }
 .s-signe { stroke: #17663a; fill: #17663a; stroke-opacity: .65; }
@@ -605,7 +620,7 @@ function porteExistante(adr, lat, lng) {
   return portes().find(p => (k && cleAdresse(p.adresse) === k && adr.numero) || metres([p.lat, p.lng], [lat, lng]) < 6);
 }
 async function nouvellePorteA(lat, lng, origine) {
-  photosEnAttente = [];
+  photosEnAttente = []; besoinsEnAttente = [];
   if (marqueurTemp) carte.removeLayer(marqueurTemp);
   marqueurTemp = L.marker([lat, lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="m-porte temp">?</div>' }), interactive: false }).addTo(carte);
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Recherche de l'adresse…</h2>${BTN_FERMER}</div>`);
@@ -641,6 +656,7 @@ function feuillePorte(p, neuf) {
       ${p ? '' : `<label class="champ">Adresse<input id="i-adr" value="${esc(adresse)}" placeholder="N° et rue" autocomplete="off"></label>
         ${neuf.adr ? '' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
       <div class="photos" id="photos" aria-label="Photos de la maison"></div>
+      ${champBesoins(p)}
       <label class="champ">Note <span style="text-transform:none;letter-spacing:0;font-weight:500">(facultatif, avant de choisir)</span><input id="i-note" placeholder="ex. toit moussu, revenir le soir" autocomplete="off"></label>
       ${p ? carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : ''}
       <div class="statuts">${boutons}</div>
@@ -654,6 +670,7 @@ function feuillePorte(p, neuf) {
       f.querySelector('#b-r1partage').onclick = () => partagerIcs(p);
     }
     if (p) brancherSuivi(f, p);
+    brancherBesoins(f, p);
     brancherPhotos(f.querySelector('#photos'), p);
     const bt = f.querySelector('#b-tournee');
     if (bt) bt.onclick = () => {
@@ -672,6 +689,7 @@ function feuillePorte(p, neuf) {
           rue: memeAdr ? neuf.adr.rue : '', ville: memeAdr ? neuf.adr.ville : '',
           lat, lng, statut, visites: [], auteur: etat.moi, cree: maintenant(), maj: maintenant(),
         };
+        if (besoinsEnAttente.length) { np.besoins = besoinsEnAttente; np.besoinsMaj = maintenant(); besoinsEnAttente = []; }
         if (photosEnAttente.length) { np.photos = photosEnAttente.map(id => ({ id, date: maintenant(), auteur: etat.moi })); photosEnAttente = []; }
         etat.portes.push(np);
         ajouterVisite(np, statut, note);
@@ -727,11 +745,13 @@ function feuilleR1(p, apres) {
         <label class="champ">Heure<input id="r-heure" type="time" value="${esc(r.heure || '18:00')}" step="900"></label>
       </div>
       <div class="champ" style="gap:8px">Durée<div class="puces" id="r-duree">${[45, 60, 90].map(m => `<button class="puce" data-m="${m}" aria-pressed="${m === (r.duree || 60)}">${m < 60 ? m + ' min' : m === 60 ? '1 h' : '1 h 30'}</button>`).join('')}</div></div>
-      <label class="champ">Besoin, à noter pour le R1<input id="r-besoin" value="${esc(r.besoin || (p.aRappeler && p.aRappeler.note) || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. nettoyage vapeur + hydrofuge, toit moussu côté nord" autocomplete="off"></label>
+      ${champBesoins(p)}
+      <label class="champ">Précisions pour le R1<input id="r-besoin" value="${esc(r.besoin || (p.aRappeler && p.aRappeler.note) || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. toit moussu côté nord, attend 2 devis" autocomplete="off"></label>
       <button class="b2 jaune" id="r-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>
       <div class="ligne-btns"><button class="b2" id="r-ok">Enregistrer seulement</button><button class="b2" id="r-plus-tard">Plus tard</button></div>
     </div>`, f => {
     let duree = r.duree || 60;
+    brancherBesoins(f, p);
     f.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { duree = +b.dataset.m; f.querySelectorAll('[data-m]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
     const lire = () => ({
       nom: f.querySelector('#r-nom').value.trim(), tel: f.querySelector('#r-tel').value.trim(),
@@ -775,7 +795,7 @@ function evenementR1(p) {
   const r = p.r1, debut = dateR1(r);
   return { uid: `${p.id}-r1`, titre: `R1 – ${r.nom || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
     lieu: p.adresse, geo: p, alarme: 'R1 dans 1 heure : ' + court(p),
-    notes: [r.tel && `Tél. : ${r.tel}`, r.besoin && `Besoin : ${r.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
+    notes: [r.tel && `Tél. : ${r.tel}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, r.besoin && `Précisions : ${r.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
 }
 function fabriquerIcs(p, ev) {
   ev = ev || evenementR1(p);
@@ -829,7 +849,7 @@ function carteR1(p) {
   const r = p.r1; if (!r || !r.date) return '';
   const passe = dateR1(r) < new Date();
   return `<div class="carte-r1"><span class="quand-r1">${passe ? 'R1 passé : ' : 'R1 '}${esc(texteR1(r))}</span>
-    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>
+    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>${etiquettesBesoins(besoinsDe(p))}
     <div class="ligne-btns">${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
       <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer le .ics</button></div></div>`;
 }
@@ -845,6 +865,34 @@ function rdvAVenir() {
     if (r2 && dateR1(r2) > lim && etapeDe(p) === 'r2') out.push({ p, type: 'R2', rdv: r2, quand: dateR1(r2) });
   }
   return out.sort((a, b) => a.quand - b.quand);
+}
+
+/* ───────── Besoins du client ───────── */
+const BESOINS_DEFAUT = ['Nettoyage vapeur + hydrofuge', 'Démoussage seul', 'Hydrofuge seul', 'Velux', 'Puits de lumière', 'Gouttières', 'Bandeaux', 'Sous-faces', 'Fuite / réparation', 'Autre'];
+const listeBesoins = () => (etat.besoinsListe && etat.besoinsListe.length ? etat.besoinsListe : BESOINS_DEFAUT);
+let besoinsEnAttente = [];
+const besoinsDe = p => p ? (p.besoins || []) : besoinsEnAttente;
+const texteBesoins = l => l.join(', ');
+const etiquettesBesoins = l => l.length ? `<span class="etiquettes">${l.map(b => `<span>${esc(b)}</span>`).join('')}</span>` : '';
+const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+function champBesoins(p) {
+  const choisis = besoinsDe(p);
+  // les besoins notés qui ne sont plus dans la liste restent affichés
+  const liste = [...listeBesoins(), ...choisis.filter(b => !listeBesoins().includes(b))];
+  return `<div class="champ besoins" style="gap:6px">Besoins du client
+    <button type="button" class="deroulant" aria-expanded="false"><span class="${choisis.length ? '' : 'vide-choix'}">${esc(choisis.length ? texteBesoins(choisis) : 'Choisir…')}</span>${CHEVRON}</button>
+    <div class="choix-besoins" hidden>${liste.map(b => `<label class="coche"><input type="checkbox" value="${esc(b)}"${choisis.includes(b) ? ' checked' : ''}>${esc(b)}</label>`).join('')}</div>
+  </div>`;
+}
+function brancherBesoins(f, p) {
+  const z = f.querySelector('.besoins'); if (!z) return;
+  const btn = z.querySelector('.deroulant'), panneau = z.querySelector('.choix-besoins'), resume = btn.querySelector('span');
+  btn.onclick = () => { const ouvert = panneau.hidden; panneau.hidden = !ouvert; btn.setAttribute('aria-expanded', ouvert); };
+  z.querySelectorAll('input').forEach(c => c.onchange = () => {
+    const l = [...z.querySelectorAll('input:checked')].map(x => x.value);
+    if (p) { p.besoins = l; p.besoinsMaj = maintenant(); sauver(); } else besoinsEnAttente = l;
+    resume.textContent = l.length ? texteBesoins(l) : 'Choisir…'; resume.className = l.length ? '' : 'vide-choix';
+  });
 }
 
 /* ───────── Après le R1 : R2, devis, signature ───────── */
@@ -876,7 +924,7 @@ function evenementR2(p) {
   const r = rdvR2(p), debut = dateR1(r);
   return { uid: `${p.id}-r2`, titre: `R2 – ${nomClient(p) || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
     lieu: p.adresse, geo: p, alarme: 'R2 dans 1 heure : ' + court(p),
-    notes: [telClient(p) && `Tél. : ${telClient(p)}`, r.note && `À préparer : ${r.note}`, p.r1 && p.r1.besoin && `Besoin : ${p.r1.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
+    notes: [telClient(p) && `Tél. : ${telClient(p)}`, r.note && `À préparer : ${r.note}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, p.r1 && p.r1.besoin && `Précisions : ${p.r1.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
 }
 function texteEtape(e) {
   const morceaux = [ETAPES_LONG[e.etape]];
@@ -912,6 +960,7 @@ function carteSuivi(p) {
     <span class="suivi-titre">${esc(titre)}${et === 'r2' && rdvR2(p) && rdvR2(p).note ? `<small>${esc(rdvR2(p).note)}</small>` : ''}</span>
     ${alerte ? `<span class="alerte">${esc(alerte)}</span>` : ''}
     ${et !== 'r1' && (nomClient(p) || telClient(p)) ? `<span class="qui">${esc([nomClient(p), telClient(p)].filter(Boolean).join(' · '))}</span>` : ''}
+    ${et !== 'r1' ? etiquettesBesoins(besoinsDe(p)) : ''}
     <div class="ligne-btns">${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
     ${histo ? `<ul class="histo">${histo}</ul><button class="lien" id="b-suivi-annuler">Annuler la dernière étape</button>` : ''}
   </div>`;
@@ -988,7 +1037,7 @@ function evenementRappel(p) {
   const r = p.aRappeler, debut = dateRappel(r);
   return { uid: `${p.id}-rappel-${r.date}`, titre: `📞 Rappeler ${r.nom || 'le client'} – ${court(p)}`, debut, fin: new Date(+debut + 15 * 60000),
     lieu: p.adresse, geo: p, alarme: null,
-    notes: [r.tel && `Tél. : ${r.tel}`, r.note && `Intéressé par : ${r.note}`, `Porte frappée le ${new Date(p.visites.slice(-1)[0].date).toLocaleDateString('fr-FR')}`].filter(Boolean).join('\n') };
+    notes: [r.tel && `Tél. : ${r.tel}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, r.note && `Précisions : ${r.note}`, `Porte frappée le ${new Date(p.visites.slice(-1)[0].date).toLocaleDateString('fr-FR')}`].filter(Boolean).join('\n') };
 }
 function carteRappel(p) {
   if (p.statut !== 'rappel') return '';
@@ -997,7 +1046,7 @@ function carteRappel(p) {
     <div class="ligne-btns"><button class="b2 plein" id="b-rapmodif">Fixer une date de rappel</button></div></div>`;
   const retard = dateRappel(r) < new Date();
   return `<div class="carte-rappel"><span class="quand-r1${retard ? ' retard' : ''}">${retard ? 'À rappeler depuis ' : 'À rappeler '}${esc(texteRappel(r).replace(/^./, c => c.toLowerCase()))}</span>
-    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Nom et téléphone non notés')}${r.note ? '<br>' + esc(r.note) : ''}</span>
+    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Nom et téléphone non notés')}${r.note ? '<br>' + esc(r.note) : ''}</span>${etiquettesBesoins(besoinsDe(p))}
     <div class="ligne-btns">${r.tel ? `<a class="b2 plein" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
       <button class="b2" id="b-rapcal">Calendrier</button><button class="b2" id="b-rapmodif">Modifier</button></div>
     <span class="sous" style="margin:0">Après l’appel, choisis « R1 pris » ou « Pas intéressé » plus bas.</span></div>`;
@@ -1018,11 +1067,13 @@ function feuilleRappel(p, apres) {
         <label class="champ">Date<input id="a-date" type="date" value="${esc(d0)}"></label>
         <label class="champ">Heure<input id="a-heure" type="time" value="${esc(r.heure || '18:00')}" step="900"></label>
       </div>
-      <label class="champ">Ce qui l’intéresse<input id="a-note" value="${esc(r.note || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. démoussage, attend l’accord de son mari" autocomplete="off"></label>
+      ${champBesoins(p)}
+      <label class="champ">Précisions<input id="a-note" value="${esc(r.note || (derniereNote ? derniereNote.note : ''))}" placeholder="ex. démoussage, attend l’accord de son mari" autocomplete="off"></label>
       <button class="b2 jaune" id="a-cal" style="justify-content:center;min-height:52px">Enregistrer et ajouter au calendrier</button>
       <div class="ligne-btns"><button class="b2" id="a-ok">Enregistrer seulement</button><button class="b2" id="a-plus-tard">Plus tard</button></div>
     </div>`, f => {
     const dIn = f.querySelector('#a-date');
+    brancherBesoins(f, p);
     f.querySelectorAll('[data-j]').forEach(b => b.onclick = () => { dIn.value = dansJours(+b.dataset.j); f.querySelectorAll('[data-j]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
     dIn.onchange = () => f.querySelectorAll('[data-j]').forEach(x => x.setAttribute('aria-pressed', dansJours(+x.dataset.j) === dIn.value));
     const enregistrer = () => {
@@ -1653,6 +1704,15 @@ function afficherBilan(zone) {
         const ps = [...new Set(l.map(x => x.p))], sg = ps.filter(p => etapeDe(p) === 'signe'), ca = sg.reduce((t, p) => t + montantSigne(p), 0);
         return ligneTableau(rue === '?' ? 'Adresse inconnue' : rue, [ville, sg.length ? `${pl(sg.length, 'signé')}${ca ? ' ' + euros(ca) : ''}` : ''].filter(Boolean).join(' · '), l, rue === '?' ? '' : cleRue(rue, ville)); }).join('')}</tbody></table>`;
     }
+    const avecBesoins = [...new Set(liste.map(x => x.p))].filter(p => besoinsDe(p).length);
+    if (avecBesoins.length) {
+      const parB = new Map();
+      for (const p of avecBesoins) for (const b of besoinsDe(p)) { if (!parB.has(b)) parB.set(b, []); parB.get(b).push(p); }
+      html += `<h3>Besoins exprimés</h3><table class="tableau"><thead><tr><th>Besoin</th><th>Portes</th><th>R1</th><th>Signés</th></tr></thead><tbody>${[...parB.entries()].sort((a, b) => b[1].length - a[1].length).map(([b, ps]) => {
+        const sg = ps.filter(p => etapeDe(p) === 'signe'), ca = sg.reduce((t, p) => t + montantSigne(p), 0);
+        return `<tr><td>${esc(b)}${ca ? `<small>${esc(euros(ca))} signés</small>` : ''}</td><td>${ps.length}</td><td>${ps.filter(p => etapeDe(p)).length}</td><td class="${sg.length ? 'r1' : ''}">${sg.length}</td></tr>`;
+      }).join('')}</tbody></table>`;
+    }
     if (plusieurs && qui === 'tous') {
       const gens = [...grouper(liste, x => x.v.auteur || '?').entries()].sort((a, b) => b[1].length - a[1].length);
       html += `<h3>Par commercial</h3><table class="tableau">${enteteTableau('Qui')}<tbody>${gens.map(([k, l]) => ligneTableau(k === '?' ? 'Sans prénom' : k, '', l)).join('')}</tbody></table>`;
@@ -1721,6 +1781,9 @@ $('#b-menu').onclick = () => {
       ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
       <h3>Calendrier de l'iPhone</h3>
       <p class="sous" style="margin:0">Les R1, R2 et rappels passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : le rendez-vous s'inscrit tout seul dans le Calendrier. Ne renomme pas le raccourci, sinon la carte ne le trouve plus.</p>
+      <h3>Liste des besoins</h3>
+      <label class="champ">Un besoin par ligne<textarea id="i-besoins" rows="6">${esc(listeBesoins().join('\n'))}</textarea></label>
+      <div class="ligne-btns"><button class="b2" id="b-besoins-ok">Enregistrer la liste</button><button class="b2" id="b-besoins-defaut">Liste d’origine</button></div>
       <h3>Photos</h3>
       <p class="sous" style="margin:0">Les photos restent sur ce téléphone : elles ne partent pas avec « Envoyer mes portes ». Pour en transmettre une, ouvre-la et touche « Partager ».</p>
       <h3>Légende</h3>
@@ -1730,6 +1793,14 @@ $('#b-menu').onclick = () => {
     afficherBilan(f.querySelector('#bilan'));
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
+    f.querySelector('#b-besoins-ok').onclick = () => {
+      etat.besoinsListe = [...new Set(f.querySelector('#i-besoins').value.split('\n').map(x => x.trim()).filter(Boolean))];
+      etat.besoinsListeMaj = maintenant(); sauver(); toast(`Liste enregistrée : ${etat.besoinsListe.length} besoins`);
+    };
+    f.querySelector('#b-besoins-defaut').onclick = () => {
+      etat.besoinsListe = null; etat.besoinsListeMaj = maintenant(); sauver();
+      f.querySelector('#i-besoins').value = BESOINS_DEFAUT.join('\n'); toast('Liste d’origine remise');
+    };
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
@@ -1742,7 +1813,7 @@ $('#b-menu').onclick = () => {
   });
 };
 async function exporter() {
-  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes.map(p => Object.assign({}, p, { photos: undefined })), rues: etat.rues || {} });
+  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes.map(p => Object.assign({}, p, { photos: undefined })), rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '' });
   const nom = `prospection-${cleAdresse(etat.moi || 'moi').replace(/ /g, '-')}-${jourCle(new Date())}.json`;
   const fichier = new File([json], nom, { type: 'application/json' });
   try {
@@ -1786,6 +1857,7 @@ function fusionner(src) {
     loc.visites.sort((a, b) => a.date < b.date ? -1 : 1);
     if (loc.visites.length) loc.statut = loc.visites[loc.visites.length - 1].statut;
     if (p.r1 && (!loc.r1 || (p.r1.cree || '') > (loc.r1.cree || '') || p.maj > loc.maj)) loc.r1 = p.r1;
+    if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
     const vusE = new Set((loc.suivi || []).map(cleE));
@@ -1794,6 +1866,7 @@ function fusionner(src) {
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi) majs++;
   }
+  if ((src.besoinsListeMaj || '') > (etat.besoinsListeMaj || '')) { etat.besoinsListe = src.besoinsListe; etat.besoinsListeMaj = src.besoinsListeMaj; }
   // Rues terminées : la décision la plus récente gagne
   etat.rues = etat.rues || {};
   for (const [k, r] of Object.entries(src.rues || {})) if (!etat.rues[k] || r.maj > etat.rues[k].maj) etat.rues[k] = r;
