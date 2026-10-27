@@ -458,6 +458,10 @@ function charger() {
   return vide();
 }
 function sauver() {
+  enregistrerLocal();
+  if (typeof planifierSynchro === 'function') planifierSynchro();
+}
+function enregistrerLocal() {
   try { localStorage.setItem(CLE, JSON.stringify(etat)); }
   catch (e) { toast("Enregistrement impossible : stockage plein ou navigation privée."); }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
@@ -691,7 +695,7 @@ function feuillePorte(p, neuf) {
   // Ordre pensé pour le terrain : d'abord ce qu'on fait devant la porte (le statut), le reste replié dans « Détails ».
   const titre = p && p.origine === 'salon' ? ((p.contact && p.contact.nom) || court(p) || 'Prospect salon') : p ? court(p) : (neuf.adr ? court({ numero: neuf.adr.numero, rue: neuf.adr.rue, adresse: neuf.adr.label }) : 'Nouvelle porte');
   const cartes = p ? carteProspect(p) + carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : '';
-  const nbPhotos = p ? (p.photos || []).length : photosEnAttente.length, nbBesoins = besoinsDe(p).length;
+  const nbPhotos = p ? photosDe(p).length : photosEnAttente.length, nbBesoins = besoinsDe(p).length;
   const resume = [nbPhotos && pl(nbPhotos, 'photo'), nbBesoins && pl(nbBesoins, 'besoin')].filter(Boolean).join(' · ');
   const ouvrirDetails = !p && !neuf.adr;
   const MAX_H = 3, histoLi = histo ? histo.split('</li>').filter(Boolean).map(x => x + '</li>') : [];
@@ -1314,7 +1318,8 @@ for (const sel of ['#f-photo', '#f-photo-lib']) $(sel).onchange = async e => {
 };
 const ICONE_PHOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 const ICONE_PELLICULE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 16 5-5 4 4 2-2 5 5"/></svg>';
-const idsPhotos = p => p ? (p.photos || []).map(x => x.id) : photosEnAttente;
+const photosDe = p => (p.photos || []).filter(x => !x.supprime);
+const idsPhotos = p => p ? photosDe(p).map(x => x.id) : photosEnAttente;
 async function brancherPhotos(zone, p) {
   if (!zone) return;
   urlsVignettes.splice(0).forEach(u => URL.revokeObjectURL(u));
@@ -1360,7 +1365,7 @@ async function ouvrirPhoto(p, ids, i, apresSuppr) {
   const s = $('#v-suppr'); s.textContent = 'Supprimer'; s.classList.remove('plein'); delete s.dataset.ok;
   s.onclick = async () => {
     if (!s.dataset.ok) { s.dataset.ok = 1; s.textContent = 'Confirmer'; s.classList.add('plein'); return; }
-    if (p) { p.photos = (p.photos || []).filter(x => x.id !== id); sauver(); } else photosEnAttente = photosEnAttente.filter(x => x !== id);
+    if (p) { const ph = (p.photos || []).find(x => x.id === id); if (ph) { ph.supprime = true; ph.maj = maintenant(); } sauver(); } else photosEnAttente = photosEnAttente.filter(x => x !== id);
     await photosDB.suppr(id).catch(() => {});
     fermer(); apresSuppr && apresSuppr(); toast('Photo supprimée');
   };
@@ -1546,7 +1551,7 @@ function texteFiche(p) {
   const notes = p.visites.filter(v => v.note && v.canal !== 'salon').map(v => `${new Date(v.date).toLocaleDateString('fr-FR')} : ${v.note}`);
   if (notes.length) L.push(`Notes de passage : ${notes.join(' / ')}`);
   if (p.salon) L.push(`Accepte d’être recontacté : ${c.consent ? 'oui' : 'non noté'}`);
-  if ((p.photos || []).length) L.push(`Photos : ${(p.photos || []).length} (jointes si partagées, sinon dans l’appli)`);
+  if (photosDe(p).length) L.push(`Photos : ${photosDe(p).length} (jointes si partagées, sinon dans l’appli)`);
   if (!p.horsCarte) L.push(`Itinéraire : ${lienPlans(p)}`);
   return L.join('\n');
 }
@@ -1561,7 +1566,7 @@ async function partagerTexte(titre, texte, fichiers) {
 }
 async function fichiersPhotos(p) {
   const out = [];
-  for (const [i, x] of (p.photos || []).entries()) {
+  for (const [i, x] of photosDe(p).entries()) {
     const r = await photosDB.lire(x.id).catch(() => null);
     if (r && r.blob) out.push(new File([r.blob], `${cleAdresse(sujetFiche(p)).replace(/ /g, '-').slice(0, 40)}-${i + 1}.jpg`, { type: 'image/jpeg' }));
   }
@@ -1574,7 +1579,7 @@ function feuilleFiche(p, enchainer) {
     <div class="pile">
       <pre class="fiche">${esc(texte)}</pre>
       <a class="b2 jaune" id="fi-mail" href="${esc(lienMail(sujetFiche(p), texte))}" style="justify-content:center;min-height:52px">M’envoyer la fiche par mail</a>
-      <div class="ligne-btns"><button class="b2" id="fi-partage">Partager${(p.photos || []).length ? ' avec les photos' : ''}…</button>
+      <div class="ligne-btns"><button class="b2" id="fi-partage">Partager${photosDe(p).length ? ' avec les photos' : ''}…</button>
         ${enSalon ? '<button class="b2 plein" id="fi-suivant">Prospect suivant →</button>' : `<button class="b2" id="fi-porte">Voir le prospect</button>`}</div>
     </div>`, f => {
     f.querySelector('#fi-mail').onclick = () => { p.ficheEnvoyee = maintenant(); sauver(); };
@@ -1713,6 +1718,95 @@ function feuillePrep(p) {
     }
   });
 }
+/* ───────── Synchronisation avec le Pi (Home Assistant, application « Carte – synchro ») ───────── */
+const CLE_SY = CLE + ':synchro';
+let synchro = { url: '', code: '', appareil: '', dernier: '', etag: '', envoye: '', erreur: '', appareils: [] };
+try { Object.assign(synchro, JSON.parse(localStorage.getItem(CLE_SY)) || {}); } catch (e) {}
+if (!synchro.appareil) synchro.appareil = uid().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+const garderSynchro = () => { try { localStorage.setItem(CLE_SY, JSON.stringify(synchro)); } catch (e) {} };
+garderSynchro();
+const synchroActive = () => !!(synchro.url && synchro.code);
+const nomAppareil = () => `${/ipad/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad' : /iphone/i.test(navigator.userAgent) ? 'iPhone' : /mac/i.test(navigator.userAgent) ? 'Mac' : 'Appareil'}${etat.moi ? ' de ' + etat.moi : ''}`;
+function etatPourEnvoi(avecPhotos) {
+  return { app: 'carte-prospection', version: 1, par: etat.moi, appareil: nomAppareil(), exporteLe: maintenant(), chantiers: etat.chantiers,
+    portes: avecPhotos ? etat.portes : etat.portes.map(p => Object.assign({}, p, { photos: undefined })),
+    rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '', salons: salons() };
+}
+async function appelPi(chemin, opts = {}) {
+  const base = synchro.url.replace(/\/+$/, '');
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), opts.delai || 20000);
+  try {
+    const r = await fetch(base + chemin, { method: opts.method || 'GET', body: opts.body, signal: ctl.signal, cache: 'no-store',
+      headers: Object.assign({ 'X-Code': synchro.code }, opts.headers || {}) });
+    if (r.status === 401) throw new Error('code d’équipe incorrect');
+    if (r.status === 503) throw new Error('code d’équipe pas encore réglé sur le Pi');
+    if (!r.ok && r.status !== 304) throw new Error('le Pi répond ' + r.status);
+    return r;
+  } catch (e) {
+    throw e.name === 'AbortError' ? new Error('le Pi ne répond pas') : e.name === 'TypeError' ? new Error('Pi injoignable (réseau ou adresse ?)') : e;
+  } finally { clearTimeout(t); }
+}
+let synchroEnCours = null, minuterieSynchro = null;
+function planifierSynchro(ms = 4000) {
+  if (!synchroActive()) return;
+  clearTimeout(minuterieSynchro); minuterieSynchro = setTimeout(() => synchroniser(), ms);
+}
+function synchroniser(manuel) {
+  if (!synchroActive()) return Promise.resolve(false);
+  if (synchroEnCours) return synchroEnCours;
+  synchroEnCours = (async () => {
+    let recus = 0;
+    try {
+      // 1. Ce que les autres appareils ont noté
+      const r = await appelPi(`/etats?sauf=${encodeURIComponent(synchro.appareil)}`, { headers: synchro.etag && !manuel ? { 'If-None-Match': synchro.etag } : {} });
+      if (r.status !== 304) {
+        const j = await r.json();
+        synchro.appareils = j.appareils.map(a => ({ nom: (a.etat && (a.etat.appareil || a.etat.par)) || 'Appareil', le: a.etat && a.etat.exporteLe }));
+        for (const a of j.appareils) if (a.etat && a.etat.app === 'carte-prospection') { const x = fusionner(a.etat); recus += x.ajouts + x.majs; }
+        synchro.etag = r.headers.get('ETag') || '';
+        enregistrerLocal(); dessiner(); majModeSalon();
+      }
+      // 2. Ce que cet appareil a noté
+      const corps = JSON.stringify(etatPourEnvoi(true));
+      const emp = corps.length + ':' + [...corps].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
+      if (emp !== synchro.envoye || manuel) {
+        await appelPi(`/etat/${synchro.appareil}`, { method: 'PUT', body: corps, headers: { 'Content-Type': 'application/json' }, delai: 60000 });
+        synchro.envoye = emp;
+      }
+      // 3. Les photos, dans les deux sens
+      const surPi = new Set((await (await appelPi('/photos')).json()).photos);
+      for (const p of etat.portes) for (const ph of p.photos || []) {
+        if (ph.supprime) continue;
+        const loc = await photosDB.lire(ph.id).catch(() => null);
+        if (loc && loc.blob && !surPi.has(ph.id)) await appelPi(`/photo/${ph.id}`, { method: 'PUT', body: loc.blob, headers: { 'Content-Type': 'image/jpeg' }, delai: 60000 });
+        else if (!loc && surPi.has(ph.id)) {
+          const blob = await (await appelPi(`/photo/${ph.id}`, { delai: 60000 })).blob();
+          await photosDB.mettre(ph.id, { blob, date: ph.date || maintenant() });
+        }
+      }
+      synchro.dernier = maintenant(); synchro.erreur = '';
+      if (manuel) toast(recus ? `Synchronisé : ${pl(recus, 'changement reçu', 'changements reçus')}` : 'Synchronisé, tout est à jour');
+      return true;
+    } catch (e) {
+      synchro.erreur = e.message || String(e);
+      if (manuel) toast('Synchro impossible : ' + synchro.erreur);
+      return false;
+    } finally {
+      garderSynchro(); synchroEnCours = null; majEtatSynchro();
+    }
+  })();
+  return synchroEnCours;
+}
+function texteEtatSynchro() {
+  if (!synchroActive()) return 'Pas encore réglée : tes données restent sur cet appareil.';
+  const qui = synchro.appareils && synchro.appareils.length ? ` Autres appareils : ${synchro.appareils.map(a => a.nom).join(', ')}.` : '';
+  if (synchro.erreur) return `Dernier essai raté : ${synchro.erreur}.${synchro.dernier ? ` Dernière synchro réussie ${quand(synchro.dernier)}.` : ''}`;
+  return synchro.dernier ? `Synchronisée ${quand(synchro.dernier)}.${qui}` : 'Réglée, première synchro en cours…';
+}
+function majEtatSynchro() { const e = $('#etat-synchro'); if (e) e.textContent = texteEtatSynchro(); }
+setInterval(() => { if (document.visibilityState === 'visible') synchroniser(); }, 90000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') planifierSynchro(500); });
+window.addEventListener('online', () => planifierSynchro(1000));
 carte.on('click', e => {
   if (voirSecteurs) return toast('Mode secteurs : touche une rue colorée, ou ferme-le avec son bouton à droite');
   nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte');
@@ -2196,6 +2290,11 @@ $('#b-menu').onclick = () => {
       <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2 plein" id="b-salon">Démarrer un salon</button>'}</div>
       ${salons().filter(x => x.id !== salonEnCours).length ? `<ul class="liste">${salons().filter(x => x.id !== salonEnCours).sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 6).map(x => `<li><button data-salon="${x.id}"><span class="txt"><span class="a">${esc(x.nom)}</span><span class="m">${esc(new Date(x.debut).toLocaleDateString('fr-FR'))} · ${pl(prospectsSalon(x.id).length, 'prospect')}</span></span></button></li>`).join('')}</ul>` : ''}
       <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
+      <h3>Synchronisation avec le Pi</h3>
+      <p class="sous" style="margin:0" id="etat-synchro">${esc(texteEtatSynchro())}</p>
+      <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
+      <label class="champ">Code d’équipe<input id="sy-code" type="password" value="${esc(synchro.code)}" placeholder="le même sur tous vos appareils" autocomplete="off" autocapitalize="off"></label>
+      <div class="ligne-btns"><button class="b2 plein" id="sy-ok">${synchroActive() ? 'Synchroniser maintenant' : 'Tester et activer'}</button>${synchroActive() ? '<button class="b2" id="sy-off">Désactiver</button>' : ''}</div>
       <h3>Partager avec ton collègue</h3>
       <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
       <div class="ligne-btns"><button class="b2 plein" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
@@ -2216,6 +2315,17 @@ $('#b-menu').onclick = () => {
     afficherBilan(f.querySelector('#bilan'));
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
+    f.querySelector('#sy-ok').onclick = async () => {
+      const url = f.querySelector('#sy-url').value.trim(), code = f.querySelector('#sy-code').value.trim();
+      if (!/^https:\/\//i.test(url)) return toast('L’adresse du Pi doit commencer par https://');
+      if (!code) return toast('Saisis le code d’équipe.');
+      const change = url !== synchro.url || code !== synchro.code;
+      Object.assign(synchro, { url, code }); if (change) Object.assign(synchro, { etag: '', envoye: '', erreur: '' });
+      garderSynchro(); $('#etat-synchro').textContent = 'Synchronisation…';
+      if (await synchroniser(true)) $('#b-menu').onclick();
+    };
+    const syOff = f.querySelector('#sy-off');
+    if (syOff) syOff.onclick = () => { Object.assign(synchro, { url: '', code: '', etag: '', envoye: '', erreur: '', dernier: '' }); garderSynchro(); toast('Synchro désactivée sur cet appareil'); $('#b-menu').onclick(); };
     f.querySelector('#i-mail').onchange = e => { etat.email = e.target.value.trim(); sauver(); toast('Adresse mail enregistrée'); };
     const bsa = f.querySelector('#b-salon'); if (bsa) bsa.onclick = feuilleSalon;
     const bsr = f.querySelector('#b-salon-recap'); if (bsr) bsr.onclick = () => feuilleRecapSalon(salonEnCours);
@@ -2278,7 +2388,13 @@ function fusionner(src) {
   for (const p of src.portes || []) {
     let loc = etat.portes.find(x => x.id === p.id);
     if (!loc && p.numero && !p.supprime) loc = etat.portes.find(x => !x.supprime && x.numero && cleAdresse(x.adresse) === cleAdresse(p.adresse));
-    if (!loc) { const n = JSON.parse(JSON.stringify(p)); delete n.photos; etat.portes.push(n); if (!p.supprime) ajouts++; continue; }
+    if (!loc) { etat.portes.push(JSON.parse(JSON.stringify(p))); if (!p.supprime) ajouts++; continue; }
+    let photosChangees = false;
+    for (const ph of p.photos || []) {
+      const l = (loc.photos = loc.photos || []).find(x => x.id === ph.id);
+      if (!l) { loc.photos.push(Object.assign({}, ph)); photosChangees = true; }
+      else if (ph.supprime && !l.supprime) { l.supprime = true; l.maj = ph.maj; photosChangees = true; }
+    }
     const avant = loc.visites.length, etaitSupprime = !!loc.supprime;
     const vus = new Set(loc.visites.map(cleVisite));
     for (const v of p.visites || []) if (!vus.has(cleVisite(v))) loc.visites.push(v);
@@ -2296,7 +2412,7 @@ function fusionner(src) {
     for (const e of p.suivi || []) if (!vusE.has(cleE(e))) (loc.suivi = loc.suivi || []).push(e);
     if (loc.suivi) loc.suivi.sort((a, b) => a.date < b.date ? -1 : 1);
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
-    if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi) majs++;
+    if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi || photosChangees) majs++;
   }
   if ((src.besoinsListeMaj || '') > (etat.besoinsListeMaj || '')) { etat.besoinsListe = src.besoinsListe; etat.besoinsListeMaj = src.besoinsListeMaj; }
   for (const x of src.salons || []) { const l = salons().find(y => y.id === x.id); if (!l) etat.salons = [...salons(), x]; else if ((x.maj || '') > (l.maj || '')) Object.assign(l, x); }
@@ -2309,10 +2425,11 @@ function fusionner(src) {
 /* ───────── Démarrage ───────── */
 dessiner();
 if (salonEnCours && !salonDe(salonEnCours)) salonEnCours = null;
+planifierSynchro(1500);
 majModeSalon();
 // Ménage : photos prises pour une porte jamais enregistrée (liste figée au démarrage, avant toute nouvelle photo)
 photosDB.cles().then(cles => {
-  const utiles = new Set(etat.portes.flatMap(p => (p.photos || []).map(x => x.id)).concat(photosEnAttente));
+  const utiles = new Set(etat.portes.flatMap(p => photosDe(p).map(x => x.id)).concat(photosEnAttente));
   cles.filter(k => !utiles.has(k)).forEach(k => photosDB.suppr(k));
 }).catch(() => {});
 try { tournee = JSON.parse(localStorage.getItem(CLE_T)); } catch (e) { tournee = null; }
