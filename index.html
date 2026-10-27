@@ -187,6 +187,10 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .menu-btn { position: relative; }
 .menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
 
+/* Préparer le R1 */
+.vue-toit { height: 210px; border-radius: 12px; overflow: hidden; background: #3a4855; }
+.cible-toit { stroke: var(--signal); stroke-width: 3; fill: none; }
+
 /* Mode salon */
 .bandeau-salon { position: fixed; z-index: 500; top: calc(env(safe-area-inset-top, 0px) + 66px); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
   background: var(--ardoise); color: var(--surface); border-radius: 12px; box-shadow: var(--ombre); padding: 6px 6px 6px 12px; display: flex; align-items: center; gap: 6px; }
@@ -629,6 +633,7 @@ $('#b-moi').onclick = async () => {
 let marqueurTemp = null;
 function ouvrirFeuille(html, apres) {
   $('#toast').classList.remove('vu');
+  if (typeof cartePrep !== 'undefined' && cartePrep) { cartePrep.remove(); cartePrep = null; }
   $('#f-contenu').innerHTML = html;
   $('#feuille').classList.add('ouverte'); $('#voile').classList.add('ouvert');
   const f = $('#f-contenu .fermer'); if (f) f.onclick = fermerFeuille;
@@ -900,7 +905,7 @@ function carteR1(p) {
   const passe = dateR1(r) < new Date();
   return `<div class="carte-r1"><span class="quand-r1">${passe ? 'R1 passé : ' : 'R1 '}${esc(texteR1(r))}</span>
     <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>${etiquettesBesoins(besoinsDe(p))}
-    <div class="ligne-btns">${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
+    <div class="ligne-btns">${passe ? '' : '<button class="b2 jaune" id="b-prep">Préparer le R1</button>'}${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
       <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer le .ics</button></div></div>`;
 }
 function r1AVenir() {
@@ -1011,11 +1016,12 @@ function carteSuivi(p) {
     ${alerte ? `<span class="alerte">${esc(alerte)}</span>` : ''}
     ${et !== 'r1' && (nomClient(p) || telClient(p)) ? `<span class="qui">${esc([nomClient(p), telClient(p)].filter(Boolean).join(' · '))}</span>` : ''}
     ${et !== 'r1' ? etiquettesBesoins(besoinsDe(p)) : ''}
-    <div class="ligne-btns">${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
+    <div class="ligne-btns">${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2 jaune" id="b-prep">Préparer le R2</button><button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
     ${histo ? `<ul class="histo">${histo}</ul><button class="lien" id="b-suivi-annuler">Annuler la dernière étape</button>` : ''}
   </div>`;
 }
 function brancherSuivi(f, p) {
+  const bp = f.querySelector('#b-prep'); if (bp) bp.onclick = () => feuillePrep(p);
   f.querySelectorAll('[data-et]').forEach(b => b.onclick = () => feuilleEtape(p, b.dataset.et));
   const r2 = f.querySelector('#b-r2cal'); if (r2) r2.onclick = () => ajouterAuCalendrier(p, evenementR2(p));
   const nr = f.querySelector('#b-noter-r1'); if (nr) nr.onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
@@ -1626,6 +1632,87 @@ function feuilleRecapSalon(id, terminer) {
     const re = f.querySelector('#rs-reprendre'); if (re) re.onclick = () => entrerSalon(id);
   });
 }
+/* ───────── Préparer mon R1 / R2 ───────── */
+let cartePrep = null;
+const DEROULE = {
+  r1: ['Cerner le besoin du client', 'Présenter la société et notre façon de travailler', 'Mettre en confiance : photos, chantiers voisins', 'Caler le R2'],
+  r2: ['Reprendre le besoin noté au R1', 'Présenter le devis', 'Répondre aux objections', 'Conclure : signature ou nouvelle date'],
+};
+const URL_ORTHO = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM_0_19&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+function modePrep(p) { return etapeDe(p) === 'r2' && rdvR2(p) ? 'r2' : 'r1'; }
+function argumentsVoisinage(p) {
+  if (p.horsCarte) return { signes: [], chantiers: [], rue: null };
+  const ici = [p.lat, p.lng];
+  const signes = portes().filter(q => q.id !== p.id && !q.horsCarte && etapeDe(q) === 'signe')
+    .map(q => ({ q, d: metres(ici, [q.lat, q.lng]) })).filter(x => x.d <= 800).sort((a, b) => a.d - b.d).slice(0, 5);
+  const chs = chantiers(true).map(c => ({ c, d: metres(ici, [c.lat, c.lng]) })).filter(x => x.d <= 1500).sort((a, b) => a.d - b.d).slice(0, 4);
+  let rue = null;
+  if (p.rue) {
+    const k = cleRue(p.rue, p.ville), ps = portes().filter(q => q.id !== p.id && q.rue && cleRue(q.rue, q.ville) === k);
+    rue = { interesses: ps.filter(q => q.statut === 'rappel').length, r1: ps.filter(q => etapeDe(q) && !['perdu', 'signe'].includes(etapeDe(q))).length, signes: ps.filter(q => etapeDe(q) === 'signe').length };
+  }
+  return { signes, chantiers: chs, rue };
+}
+function feuillePrep(p) {
+  const mode = modePrep(p), rdv = mode === 'r2' ? rdvR2(p) : p.r1;
+  const cle = mode === 'r2' ? 'prepR2' : 'prepR1';
+  const prep = p[cle] || { faits: [], notes: '' };
+  const c = p.contact || {}, nom = nomClient(p), tel = telClient(p);
+  const av = argumentsVoisinage(p);
+  const notes = p.visites.filter(v => v.note && v.canal !== 'salon').map(v => `<li><span class="pastille ${v.statut}"></span><span><span class="quand">${esc(new Date(v.date).toLocaleDateString('fr-FR'))}</span> ${esc(v.note)}</span></li>`);
+  const nbAbs = p.visites.filter(v => v.statut === 'absent').length;
+  const premier = p.visites[0];
+  const contexte = p.salon ? `Rencontré au salon ${p.salon.nom} le ${new Date(p.cree).toLocaleDateString('fr-FR')}`
+    : premier ? `Porte frappée la 1re fois le ${new Date(premier.date).toLocaleDateString('fr-FR')}${nbAbs ? ` · ${pl(nbAbs, 'passage')} sans réponse avant` : ''}` : '';
+  const precisions = [mode === 'r2' && rdv && rdv.note && `À préparer : ${rdv.note}`, p.r1 && p.r1.besoin && `Précisions : ${p.r1.besoin}`,
+    p.aRappeler && p.aRappeler.note && `Au téléphone : ${p.aRappeler.note}`, c.projet && `Projet : ${c.projet}`, c.note && `Note salon : ${c.note}`].filter(Boolean);
+  const devis = montantDevis(p);
+  const argsHtml = [
+    ...av.signes.map(x => `<li><span class="pastille r1"></span><span><b>${esc(court(x.q))}</b> · signé${montantSigne(x.q) ? ' ' + esc(euros(montantSigne(x.q))) : ''}${besoinsDe(x.q).length ? ' · ' + esc(texteBesoins(besoinsDe(x.q))) : ''} <span class="quand">· à ${distTxt(x.d)}</span></span></li>`),
+    ...av.chantiers.map(x => `<li><span class="pastille" style="background:var(--signal)"></span><span><b>Chantier ${esc(x.c.nom)}</b> · ${x.c.archive ? 'terminé' : 'en cours'} <span class="quand">· à ${distTxt(x.d)}</span></span></li>`),
+  ];
+  const rueTxt = av.rue && (av.rue.signes || av.rue.r1 || av.rue.interesses)
+    ? `Même rue (${esc(p.rue)}) : ${[av.rue.signes && pl(av.rue.signes, 'client signé', 'clients signés'), av.rue.r1 && pl(av.rue.r1, 'autre R1', 'autres R1'), av.rue.interesses && pl(av.rue.interesses, 'intéressé')].filter(Boolean).join(', ')}.` : '';
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Préparer le ${mode.toUpperCase()}</h2>${BTN_FERMER}</div>
+    <p class="sous">${esc(nom || 'Client sans nom')} · ${esc(court(p) || c.adresseTexte || '')}</p>
+    <div class="pile">
+      <div class="carte-r1">
+        <span class="quand-r1">${rdv && rdv.date ? esc(texteR1(rdv)) : 'Date non notée'}${rdv && rdv.duree ? ` <span style="font-weight:500;font-size:15px">· ${rdv.duree} min</span>` : ''}</span>
+        <span class="qui">${esc([nom, tel].filter(Boolean).join(' · ') || 'Coordonnées non notées')}${c.email ? '<br>' + esc(c.email) : ''}<br>${esc(p.horsCarte ? (c.adresseTexte || 'Adresse non notée') : p.adresse)}</span>
+        <div class="ligne-btns">${tel ? `<a class="b2 plein" href="tel:${esc(tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${p.horsCarte ? '' : liensItineraire(p.lat, p.lng)}</div>
+      </div>
+      ${p.horsCarte ? '' : '<div class="vue-toit" id="vue-toit" aria-label="Vue aérienne du toit"></div>'}
+      <div class="photos" id="photos" aria-label="Photos de la maison"></div>
+      <h3>Le besoin</h3>
+      ${besoinsDe(p).length ? etiquettesBesoins(besoinsDe(p)) : '<p class="sous" style="margin:0">Aucun besoin coché.</p>'}
+      ${precisions.length || devis ? `<ul class="histo">${precisions.map(t => `<li><span class="pastille rappel"></span><span>${esc(t)}</span></li>`).join('')}${devis && mode === 'r2' ? `<li><span class="pastille r1"></span><span>Devis : <b>${esc(euros(devis))}</b></span></li>` : ''}</ul>` : ''}
+      ${contexte || notes.length ? `<h3>Ce qui s’est dit</h3>${contexte ? `<p class="sous" style="margin:0">${esc(contexte)}</p>` : ''}${notes.length ? `<ul class="histo">${notes.join('')}</ul>` : ''}` : ''}
+      <h3>Arguments de proximité</h3>
+      ${argsHtml.length || rueTxt ? `${rueTxt ? `<p style="margin:0">${rueTxt}</p>` : ''}${argsHtml.length ? `<ul class="histo">${argsHtml.join('')}</ul>` : ''}`
+        : '<p class="sous" style="margin:0">Pas encore de client signé ni de chantier à proximité.</p>'}
+      <h3>Déroulé du ${mode.toUpperCase()}</h3>
+      <div class="choix-besoins">${DEROULE[mode].map((t, i) => `<label class="coche"><input type="checkbox" data-etape-prep="${i}"${prep.faits[i] ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>
+      <label class="champ">Mes notes pendant le ${mode.toUpperCase()}<textarea id="prep-notes" rows="4" placeholder="ex. veut un devis avant fin novembre, compare avec un autre artisan">${esc(prep.notes || '')}</textarea></label>
+      <h3>Et après le rendez-vous ?</h3>
+      <div class="ligne-btns">${mode === 'r1' ? '<button class="b2" data-et="r2">R2 calé</button>' : ''}<button class="b2" data-et="devis">Devis envoyé</button><button class="b2 vert" data-et="signe">Signé</button><button class="b2 danger" data-et="perdu">Perdu</button></div>
+      <div class="ligne-btns"><button class="b2" id="prep-porte">Fiche complète</button><button class="b2" id="prep-fiche">M’envoyer la fiche</button></div>
+    </div>`, f => {
+    const garder = () => { p[cle] = { faits: [...f.querySelectorAll('[data-etape-prep]')].map(x => x.checked), notes: f.querySelector('#prep-notes').value, maj: maintenant() }; sauver(); };
+    f.querySelectorAll('[data-etape-prep]').forEach(x => x.onchange = garder);
+    let t; f.querySelector('#prep-notes').oninput = () => { clearTimeout(t); t = setTimeout(garder, 500); };
+    f.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { garder(); feuilleEtape(p, b.dataset.et); });
+    f.querySelector('#prep-porte').onclick = () => { garder(); ouvrirPorte(p.id); };
+    f.querySelector('#prep-fiche').onclick = () => { garder(); feuilleFiche(p); };
+    brancherPhotos(f.querySelector('#photos'), p);
+    const vue = f.querySelector('#vue-toit');
+    if (vue) {
+      cartePrep = L.map(vue, { zoomControl: false, attributionControl: false }).setView([p.lat, p.lng], 19);
+      L.tileLayer(URL_ORTHO, { maxZoom: 20, maxNativeZoom: 19 }).addTo(cartePrep);
+      L.circle([p.lat, p.lng], { radius: 12, className: 'cible-toit', interactive: false }).addTo(cartePrep);
+      setTimeout(() => cartePrep && cartePrep.invalidateSize(), 300);
+    }
+  });
+}
 carte.on('click', e => {
   if (voirSecteurs) return toast('Mode secteurs : touche une rue colorée, ou ferme-le avec son bouton à droite');
   nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte');
@@ -2081,7 +2168,7 @@ function listesMenu() {
     return item(p.id, 'rappel', r && r.date ? texteRappel(r) : 'Pas encore de date', [r && r.nom, court(p), r && r.tel].filter(Boolean).join(' · '), retard ? 'En retard : appelle-le' : '');
   }).join('')}</ul>`;
   const rdv = rdvAVenir();
-  if (rdv.length) h += `<h3>Rendez-vous à venir</h3><ul class="liste">${rdv.map(x => item(x.p.id, 'r1', `${x.type} · ${texteR1(x.rdv)}`, [nomClient(x.p), court(x.p)].filter(Boolean).join(' · '))).join('')}</ul>`;
+  if (rdv.length) h += `<h3>Rendez-vous à venir</h3><ul class="liste">${rdv.map(x => item(x.p.id, 'r1', `${x.type} · ${texteR1(x.rdv)}`, [nomClient(x.p), court(x.p)].filter(Boolean).join(' · ')).replace('data-p=', 'data-prep=')).join('')}</ul>`;
   const enCours = portes().filter(p => { const et = etapeDe(p); return (et === 'devis') || (et === 'r2' && !(rdvR2(p) && dateR1(rdvR2(p)) > new Date())) || (et === 'r1' && p.r1 && p.r1.date && dateR1(p.r1) < new Date()); })
     .sort((a, b) => ((suiviDe(a).slice(-1)[0] || {}).date || '') < ((suiviDe(b).slice(-1)[0] || {}).date || '') ? -1 : 1);
   if (enCours.length) h += `<h3>Projets à faire avancer (${enCours.length})</h3><ul class="liste">${enCours.map(p => {
@@ -2144,6 +2231,7 @@ $('#b-menu').onclick = () => {
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+    f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
     f.querySelectorAll('.pile > .liste [data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
     const r = f.querySelector('#b-raz');
     r.onclick = () => {
@@ -2200,6 +2288,7 @@ function fusionner(src) {
     if (p.contact && (!loc.contact || (p.contact.maj || '') > (loc.contact.maj || ''))) {
       Object.assign(loc, { contact: p.contact, adresse: p.adresse, numero: p.numero, rue: p.rue, ville: p.ville, lat: p.lat, lng: p.lng, horsCarte: p.horsCarte });
     }
+    for (const k of ['prepR1', 'prepR2']) if (p[k] && (!loc[k] || (p[k].maj || '') > (loc[k].maj || ''))) loc[k] = p[k];
     if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
