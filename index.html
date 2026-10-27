@@ -187,6 +187,18 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .menu-btn { position: relative; }
 .menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
 
+/* Mode salon */
+.bandeau-salon { position: fixed; z-index: 500; top: calc(env(safe-area-inset-top, 0px) + 66px); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+  background: var(--ardoise); color: var(--surface); border-radius: 12px; box-shadow: var(--ombre); padding: 6px 6px 6px 12px; display: flex; align-items: center; gap: 6px; }
+.bandeau-salon .txt { flex: 1; min-width: 0; font-size: 14px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bandeau-salon .txt b { display: block; font: 600 16px/1.15 var(--f-titre); overflow: hidden; text-overflow: ellipsis; }
+.bandeau-salon .b2 { padding: 8px 10px; font-size: 15px; }
+body.en-tournee .bandeau-salon, body.en-salon .aide-carte { display: none; }
+body.en-salon #b-ici { font-size: 17px; line-height: 1.05; }
+.fiche { margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--trait); border-radius: 12px; padding: 12px; font: 400 14px/1.45 var(--f-texte); color: var(--ardoise); }
+.coche.consent { background: var(--surface); border-radius: 10px; }
+textarea { font: inherit; }
+
 /* Fiche porte : bloc Détails repliable */
 .details { background: var(--surface); border-radius: 12px; }
 .details > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 13px 12px; cursor: pointer; font: 600 17px/1.1 var(--f-titre); }
@@ -361,7 +373,7 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
 
 <div class="haut">
   <button class="compteur" id="b-jour" style="border:0;text-align:left">
-    <span class="t">Aujourd'hui</span>
+    <span class="t" id="jour-t">Aujourd'hui</span>
     <span class="v" id="jour">0 porte</span>
   </button>
   <button class="rond" id="b-couche" aria-label="Vue aérienne" title="Plan / vue aérienne">
@@ -373,6 +385,7 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
   </button>
 </div>
 
+<div class="bandeau-salon" id="bandeau-salon" hidden></div>
 <div class="cote">
   <button class="rond" id="b-secteurs" aria-label="Afficher les secteurs" title="Secteurs : ce que chaque rue a donné">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 9 4M20 20 15 4"/><path d="M12 6v2M12 11v2M12 16v2"/></svg>
@@ -449,7 +462,7 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString
 const maintenant = () => new Date().toISOString();
 const portes = () => etat.portes.filter(p => !p.supprime);
 const chantiers = (avecArchives) => etat.chantiers.filter(c => !c.supprime && (avecArchives || !c.archive));
-const court = p => (p.rue ? `${p.numero ? p.numero + ' ' : ''}${p.rue}` : String(p.adresse || '').replace(/\s+\d{5}\s.*$/, ''));
+const court = p => (p.rue ? `${p.numero ? p.numero + ' ' : ''}${p.rue}` : String(p.adresse || '').replace(/\s+\d{5}\s.*$/, '')) || (p.contact && (p.contact.nom || p.contact.tel)) || '';
 const cleAdresse = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
 /* ───────── Outils ───────── */
@@ -551,6 +564,7 @@ function dessiner() {
     }).on('click', () => ouvrirChantier(c.id)).addTo(calqueChantiers);
   }
   for (const p of portes()) {
+    if (p.horsCarte) continue;
     L.marker([p.lat, p.lng], { icon: iconePorte(p), keyboard: true, title: court(p) })
       .on('click', () => ouvrirPorte(p.id)).addTo(calquePortes);
   }
@@ -561,11 +575,19 @@ function majCompteurs() {
   const auj = jourCle(new Date());
   let n = 0, r1 = 0, ouvertes = 0;
   for (const p of portes()) for (const v of p.visites) {
-    if (jourCle(v.date) !== auj || (etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi))) continue;
+    if (v.canal === 'salon' || jourCle(v.date) !== auj || (etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi))) continue;
     n++; if (v.statut === 'r1') r1++; if (v.statut !== 'absent') ouvertes++;
   }
-  $('#jour').textContent = n === 0 ? 'Aucune porte pour l’instant'
-    : `${n} porte${n > 1 ? 's' : ''} · ${ouvertes} ouverte${ouvertes > 1 ? 's' : ''} · ${r1} R1`;
+  const sa = salonActif();
+  if (sa) {
+    const ps = prospectsSalon(sa.id).filter(p => jourCle(p.cree) === auj);
+    $('#jour-t').textContent = 'Salon · aujourd’hui';
+    $('#jour').textContent = `${pl(ps.length, 'prospect')} · ${ps.filter(p => etapeDe(p)).length} R1`;
+  } else {
+    $('#jour-t').textContent = 'Aujourd’hui';
+    $('#jour').textContent = n === 0 ? 'Aucune porte pour l’instant'
+      : `${n} porte${n > 1 ? 's' : ''} · ${ouvertes} ouverte${ouvertes > 1 ? 's' : ''} · ${r1} R1`;
+  }
   $('#nb-repasser').textContent = aRepasser().length;
   const dus = rappelsDus().length;
   $('#nb-menu').hidden = !dus; $('#nb-menu').textContent = dus;
@@ -629,7 +651,7 @@ function chantierProche(lat, lng) {
 }
 function porteExistante(adr, lat, lng) {
   const k = cleAdresse(adr && adr.label);
-  return portes().find(p => (k && cleAdresse(p.adresse) === k && adr.numero) || metres([p.lat, p.lng], [lat, lng]) < 6);
+  return portes().find(p => !p.horsCarte && ((k && cleAdresse(p.adresse) === k && adr.numero) || metres([p.lat, p.lng], [lat, lng]) < 6));
 }
 async function nouvellePorteA(lat, lng, origine) {
   photosEnAttente = []; besoinsEnAttente = [];
@@ -650,7 +672,7 @@ async function nouvellePorteA(lat, lng, origine) {
 }
 function ouvrirPorte(id) {
   const p = etat.portes.find(x => x.id === id); if (!p) return;
-  if (carte.getZoom() < 17) carte.setView([p.lat, p.lng], 18); else carte.panTo([p.lat, p.lng]);
+  if (!p.horsCarte) { if (carte.getZoom() < 17) carte.setView([p.lat, p.lng], 18); else carte.panTo([p.lat, p.lng]); }
   feuillePorte(p);
 }
 function feuillePorte(p, neuf) {
@@ -662,15 +684,15 @@ function feuillePorte(p, neuf) {
   const boutons = Object.entries(STATUTS).map(([k, s]) =>
     `<button class="st${p && p.statut === k ? ' courant' : ''}${k === 'stop' ? ' large' : ''}" data-st="${k}"><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? `<small>${esc(s.aide)}</small>` : ''}</span></button>`).join('');
   // Ordre pensé pour le terrain : d'abord ce qu'on fait devant la porte (le statut), le reste replié dans « Détails ».
-  const titre = p ? court(p) : (neuf.adr ? court({ numero: neuf.adr.numero, rue: neuf.adr.rue, adresse: neuf.adr.label }) : 'Nouvelle porte');
-  const cartes = p ? carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : '';
+  const titre = p && p.origine === 'salon' ? ((p.contact && p.contact.nom) || court(p) || 'Prospect salon') : p ? court(p) : (neuf.adr ? court({ numero: neuf.adr.numero, rue: neuf.adr.rue, adresse: neuf.adr.label }) : 'Nouvelle porte');
+  const cartes = p ? carteProspect(p) + carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : '';
   const nbPhotos = p ? (p.photos || []).length : photosEnAttente.length, nbBesoins = besoinsDe(p).length;
   const resume = [nbPhotos && pl(nbPhotos, 'photo'), nbBesoins && pl(nbBesoins, 'besoin')].filter(Boolean).join(' · ');
   const ouvrirDetails = !p && !neuf.adr;
   const MAX_H = 3, histoLi = histo ? histo.split('</li>').filter(Boolean).map(x => x + '</li>') : [];
   ouvrirFeuille(`
     <div class="entete"><h2 id="f-titre">${esc(titre)}</h2>${BTN_FERMER}</div>
-    <p class="sous">${p ? '' : 'Nouvelle porte · '}${p && p.ville ? esc(p.ville) + ' · ' : ''}${pres}${p ? ` · ${p.visites.length} passage${p.visites.length > 1 ? 's' : ''}` : ''}</p>
+    <p class="sous">${p && p.origine === 'salon' ? `Prospect salon · ${p.horsCarte ? 'adresse non placée' : esc(court(p))} · ` : ''}${p ? '' : 'Nouvelle porte · '}${p && p.ville ? esc(p.ville) + ' · ' : ''}${p && p.horsCarte ? '' : pres}${p ? ` · ${p.visites.length} passage${p.visites.length > 1 ? 's' : ''}` : ''}</p>
     <div class="pile">
       ${cartes}
       <div class="statuts">${boutons}</div>
@@ -685,7 +707,7 @@ function feuillePorte(p, neuf) {
         </div>
       </details>
       ${p ? `<h3>Passages</h3><ul class="histo">${histoLi.slice(0, MAX_H).join('')}</ul>${histoLi.length > MAX_H ? `<button class="lien" id="b-histo">Voir les ${histoLi.length} passages</button>` : ''}` : ''}
-      <div class="ligne-btns">${(p ? p.rue : neuf.adr && neuf.adr.rue) ? '<button class="b2 plein" id="b-tournee">Tournée de la rue →</button>' : ''}${liensItineraire(lat, lng)}${p ? '<button class="b2 danger" id="b-suppr">Supprimer</button>' : ''}</div>
+      <div class="ligne-btns">${(p ? p.rue : neuf.adr && neuf.adr.rue) ? '<button class="b2 plein" id="b-tournee">Tournée de la rue →</button>' : ''}${p ? '<button class="b2" id="b-fiche">Fiche</button>' : ''}${p && p.horsCarte ? '' : liensItineraire(lat, lng)}${p ? '<button class="b2 danger" id="b-suppr">Supprimer</button>' : ''}</div>
     </div>`, f => {
     if (p && f.querySelector('#b-r1cal')) {
       f.querySelector('#b-r1cal').onclick = () => ajouterAuCalendrier(p);
@@ -695,6 +717,8 @@ function feuillePorte(p, neuf) {
     if (p) brancherSuivi(f, p);
     brancherBesoins(f, p);
     brancherPhotos(f.querySelector('#photos'), p);
+    const bfi = f.querySelector('#b-fiche'); if (bfi) bfi.onclick = () => feuilleFiche(p);
+    const bpm = f.querySelector('#b-prosp-modif'); if (bpm) bpm.onclick = () => feuilleProspect(p);
     const bh = f.querySelector('#b-histo');
     if (bh) bh.onclick = () => { f.querySelector('.histo').innerHTML = histoLi.join(''); bh.remove(); };
     const bt = f.querySelector('#b-tournee');
@@ -756,9 +780,9 @@ function texteR1(r) {
   return `${jour.charAt(0).toUpperCase() + jour.slice(1)} à ${(r.heure || '18:00').replace(':', 'h')}`;
 }
 function feuilleR1(p, apres) {
-  const r = Object.assign({}, p.aRappeler ? { nom: p.aRappeler.nom, tel: p.aRappeler.tel } : {}, p.r1 || {});
+  const r = Object.assign({}, p.contact ? { nom: p.contact.nom, tel: p.contact.tel } : {}, p.aRappeler ? { nom: p.aRappeler.nom, tel: p.aRappeler.tel } : {}, p.r1 || {});
   const demain = new Date(Date.now() + 864e5);
-  const derniereNote = [...p.visites].reverse().find(v => v.note);
+  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon');
   ouvrirFeuille(`
     <div class="entete"><h2 id="f-titre">${r.date ? 'Modifier le R1' : 'R1 pris 🎉'}</h2>${BTN_FERMER}</div>
     <p class="sous">${esc(court(p))}${p.ville ? ' · ' + esc(p.ville) : ''}</p>
@@ -812,6 +836,7 @@ function icsPlier(ligne) {
 const icsDate = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 const lienPlans = p => `https://maps.apple.com/?daddr=${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
 const frappeeLe = p => {
+  if (p.salon) return `Rencontré au salon ${p.salon.nom} le ${new Date(p.cree).toLocaleDateString('fr-FR')}`;
   const ch = chantierProche(p.lat, p.lng);
   return `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`;
 };
@@ -819,7 +844,7 @@ const frappeeLe = p => {
 function evenementR1(p) {
   const r = p.r1, debut = dateR1(r);
   return { uid: `${p.id}-r1`, titre: `R1 – ${r.nom || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
-    lieu: p.adresse, geo: p, alarme: 'R1 dans 1 heure : ' + court(p),
+    lieu: p.adresse || (p.contact && p.contact.adresseTexte) || '', geo: p.horsCarte ? null : p, alarme: 'R1 dans 1 heure : ' + court(p),
     notes: [r.tel && `Tél. : ${r.tel}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, r.besoin && `Précisions : ${r.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
 }
 function fabriquerIcs(p, ev) {
@@ -943,12 +968,12 @@ const derniereEtape = (p, ...k) => [...suiviDe(p)].reverse().find(e => k.include
 const montantSigne = p => etapeDe(p) === 'signe' ? (derniereEtape(p, 'signe').montant || 0) : 0;
 const montantDevis = p => { const e = derniereEtape(p, 'signe', 'devis'); return e ? (e.montant || 0) : 0; };
 function rdvR2(p) { const e = derniereEtape(p, 'r2'); return e && e.rdv && e.rdv.date ? e.rdv : null; }
-const nomClient = p => (p.r1 && p.r1.nom) || (p.aRappeler && p.aRappeler.nom) || '';
-const telClient = p => (p.r1 && p.r1.tel) || (p.aRappeler && p.aRappeler.tel) || '';
+const nomClient = p => (p.r1 && p.r1.nom) || (p.aRappeler && p.aRappeler.nom) || (p.contact && p.contact.nom) || '';
+const telClient = p => (p.r1 && p.r1.tel) || (p.aRappeler && p.aRappeler.tel) || (p.contact && p.contact.tel) || '';
 function evenementR2(p) {
   const r = rdvR2(p), debut = dateR1(r);
   return { uid: `${p.id}-r2`, titre: `R2 – ${nomClient(p) || 'client'} – ${court(p)}`, debut, fin: new Date(+debut + (r.duree || 60) * 60000),
-    lieu: p.adresse, geo: p, alarme: 'R2 dans 1 heure : ' + court(p),
+    lieu: p.adresse || (p.contact && p.contact.adresseTexte) || '', geo: p.horsCarte ? null : p, alarme: 'R2 dans 1 heure : ' + court(p),
     notes: [telClient(p) && `Tél. : ${telClient(p)}`, r.note && `À préparer : ${r.note}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, p.r1 && p.r1.besoin && `Précisions : ${p.r1.besoin}`, frappeeLe(p)].filter(Boolean).join('\n') };
 }
 function texteEtape(e) {
@@ -1061,8 +1086,8 @@ const rappelsDus = () => portes().filter(p => p.statut === 'rappel' && p.aRappel
 function evenementRappel(p) {
   const r = p.aRappeler, debut = dateRappel(r);
   return { uid: `${p.id}-rappel-${r.date}`, titre: `📞 Rappeler ${r.nom || 'le client'} – ${court(p)}`, debut, fin: new Date(+debut + 15 * 60000),
-    lieu: p.adresse, geo: p, alarme: null,
-    notes: [r.tel && `Tél. : ${r.tel}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, r.note && `Précisions : ${r.note}`, `Porte frappée le ${new Date(p.visites.slice(-1)[0].date).toLocaleDateString('fr-FR')}`].filter(Boolean).join('\n') };
+    lieu: p.adresse || (p.contact && p.contact.adresseTexte) || '', geo: p.horsCarte ? null : p, alarme: null,
+    notes: [r.tel && `Tél. : ${r.tel}`, besoinsDe(p).length && `Besoins : ${texteBesoins(besoinsDe(p))}`, r.note && `Précisions : ${r.note}`, frappeeLe(p)].filter(Boolean).join('\n') };
 }
 function carteRappel(p) {
   if (p.statut !== 'rappel') return '';
@@ -1077,8 +1102,8 @@ function carteRappel(p) {
     <span class="sous" style="margin:0">Après l’appel, choisis « R1 pris » ou « Pas intéressé » plus bas.</span></div>`;
 }
 function feuilleRappel(p, apres) {
-  const r = p.aRappeler || {};
-  const derniereNote = [...p.visites].reverse().find(v => v.note);
+  const r = p.aRappeler || (p.contact ? { nom: p.contact.nom, tel: p.contact.tel, note: p.contact.note } : {});
+  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon');
   const dansJours = j => isoLocal(new Date(Date.now() + j * 864e5));
   const choix = [[0, 'Ce soir'], [1, 'Demain'], [3, 'Dans 3 jours'], [7, 'Dans 1 semaine'], [14, 'Dans 2 semaines']];
   const d0 = r.date || dansJours(1);
@@ -1335,11 +1360,278 @@ async function ouvrirPhoto(p, ids, i, apresSuppr) {
   };
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#visionneuse').hidden) $('#v-fermer').click(); });
+/* ───────── Salons : prospects rencontrés sur un salon, une foire, en galerie ───────── */
+const CLE_S = CLE + ':salon';
+let salonEnCours = null;
+try { salonEnCours = localStorage.getItem(CLE_S) || null; } catch (e) {}
+const salons = () => etat.salons || [];
+const salonDe = id => salons().find(s => s.id === id);
+const salonActif = () => (salonEnCours && salonDe(salonEnCours)) || null;
+const prospectsSalon = id => portes().filter(p => p.salon && p.salon.id === id).sort((a, b) => a.cree < b.cree ? 1 : -1);
+const PROJETS = ['Dès que possible', 'D’ici 3 mois', 'Dans l’année', 'Se renseigne'];
+const ICONE_PORTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 21V4h11l3 3v14"/><path d="M3 21h18"/><circle cx="14" cy="13" r="1" fill="currentColor"/></svg>';
+const ICONE_PROSPECT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 21c0-4 3-6 7-6s7 2 7 6"/><path d="M19 8v6M16 11h6"/></svg>';
+
+function feuilleSalon() {
+  const recents = salons().slice().sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 4);
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Mode salon</h2>${BTN_FERMER}</div>
+    <p class="sous">Note les prospects d’un salon, d’une foire ou d’une galerie : une fiche par prospect, à t’envoyer par mail.</p>
+    <div class="pile">
+      <label class="champ">Nom du salon<input id="s-nom" placeholder="ex. Foire de Châlons 2026" autocomplete="off"></label>
+      ${recents.length ? `<div class="champ" style="gap:8px">Ou reprendre<div class="puces">${recents.map(s => `<button class="puce" data-sid="${s.id}">${esc(s.nom)}</button>`).join('')}</div></div>` : ''}
+      <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="s-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
+      <button class="b2 jaune" id="s-go" style="justify-content:center;min-height:52px">Démarrer le salon</button>
+    </div>`, f => {
+    const garderMail = () => { const m = f.querySelector('#s-mail').value.trim(); if (m !== (etat.email || '')) { etat.email = m; sauver(); } };
+    f.querySelectorAll('[data-sid]').forEach(b => b.onclick = () => { garderMail(); entrerSalon(b.dataset.sid); });
+    f.querySelector('#s-go').onclick = () => {
+      const nom = f.querySelector('#s-nom').value.trim();
+      if (!nom) return toast('Donne un nom au salon.');
+      garderMail();
+      const deja = salons().find(s => cleAdresse(s.nom) === cleAdresse(nom));
+      if (deja) return entrerSalon(deja.id);
+      const s = { id: uid(), nom, debut: maintenant(), par: etat.moi, maj: maintenant() };
+      if (position) { s.lat = position.lat; s.lng = position.lng; }
+      etat.salons = [...salons(), s]; sauver(); entrerSalon(s.id);
+    };
+  });
+}
+function entrerSalon(id) {
+  salonEnCours = id; try { localStorage.setItem(CLE_S, id); } catch (e) {}
+  if (tournee) finirTournee();
+  fermerFeuille(); majModeSalon();
+  toast(`Salon ${salonDe(id).nom} : touche « Nouveau prospect »`);
+}
+function quitterSalon() {
+  const s = salonActif(); salonEnCours = null; try { localStorage.removeItem(CLE_S); } catch (e) {}
+  majModeSalon();
+  if (s) toast(`Salon ${s.nom} terminé : ${pl(prospectsSalon(s.id).length, 'prospect')}`);
+}
+function majModeSalon() {
+  const s = salonActif(), b = $('#bandeau-salon');
+  document.body.classList.toggle('en-salon', !!s);
+  b.hidden = !s;
+  $('#b-ici').innerHTML = s ? `${ICONE_PROSPECT}Nouveau prospect` : `${ICONE_PORTE}Porte ici`;
+  if (s) {
+    const ps = prospectsSalon(s.id);
+    b.innerHTML = `<span class="txt"><b>${esc(s.nom)}</b>${pl(ps.length, 'prospect')} · ${ps.filter(p => etapeDe(p)).length} R1</span>
+      <button class="b2" id="bs-recap">Récap</button><button class="b2" id="bs-fin">Terminer</button>`;
+    b.querySelector('#bs-recap').onclick = () => feuilleRecapSalon(s.id);
+    b.querySelector('#bs-fin').onclick = () => feuilleRecapSalon(s.id, true);
+  }
+  majCompteurs();
+}
+
+function feuilleProspect(p) {
+  const s = p ? (salonDe(p.salon && p.salon.id) || p.salon) : salonActif();
+  if (!s) return;
+  const c = p ? (p.contact || {}) : {};
+  if (!p) { photosEnAttente = []; besoinsEnAttente = []; }
+  let adr = p && !p.horsCarte ? { label: p.adresse, numero: p.numero, rue: p.rue, ville: p.ville, lat: p.lat, lng: p.lng } : null;
+  let projet = c.projet || '', delai;
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${p ? 'Modifier le prospect' : 'Nouveau prospect'}</h2>${BTN_FERMER}</div>
+    <p class="sous">Salon ${esc(s.nom)}</p>
+    <div class="pile">
+      <label class="champ">Nom<input id="c-nom" value="${esc(c.nom || '')}" placeholder="ex. M. et Mme Martin" autocomplete="off" autocapitalize="words"></label>
+      <div class="grille2">
+        <label class="champ">Téléphone<input id="c-tel" type="tel" value="${esc(c.tel || '')}" placeholder="06 12 34 56 78" autocomplete="off"></label>
+        <label class="champ">Email<input id="c-mail" type="email" value="${esc(c.email || '')}" placeholder="facultatif" autocomplete="off" autocapitalize="off"></label>
+      </div>
+      <label class="champ">Adresse du chantier<input id="c-adr" value="${esc(adr ? adr.label : (c.adresseTexte || ''))}" placeholder="ex. 12 rue des Lilas, Fagnières" autocomplete="off"></label>
+      <ul class="resultats" id="c-res"></ul>
+      ${champBesoins(p)}
+      <div class="champ" style="gap:8px">Projet<div class="puces">${PROJETS.map(x => `<button class="puce" data-proj="${esc(x)}" aria-pressed="${x === projet}">${esc(x)}</button>`).join('')}</div></div>
+      <label class="champ">Note<textarea id="c-note" placeholder="ex. maison de 1975, tuiles mécaniques, très moussu côté nord">${esc(c.note || '')}</textarea></label>
+      <div class="champ" style="gap:6px">Photos <span style="text-transform:none;letter-spacing:0;font-weight:500">(carte de visite, photo du toit sur son téléphone…)</span><div class="photos" id="photos"></div></div>
+      <label class="coche consent"><input type="checkbox" id="c-ok"${c.consent ? ' checked' : ''}>Accepte d’être recontacté</label>
+      ${p ? '<button class="b2 plein" id="c-save" style="justify-content:center;min-height:52px">Enregistrer</button>'
+        : `<h3>Et ensuite ?</h3><div class="statuts">
+          <button class="st" data-suite="r1"><span class="pastille r1"></span><span>R1 pris<small>rendez-vous calé</small></span></button>
+          <button class="st" data-suite="rappel"><span class="pastille rappel"></span><span>À rappeler<small>fixer une date</small></span></button>
+          <button class="st large" data-suite="contact"><span class="pastille refus"></span><span>Simple contact<small>la fiche seulement, sans date</small></span></button></div>`}
+    </div>`, f => {
+    brancherBesoins(f, p);
+    brancherPhotos(f.querySelector('#photos'), p);
+    f.querySelectorAll('[data-proj]').forEach(b => b.onclick = () => {
+      projet = projet === b.dataset.proj ? '' : b.dataset.proj;
+      f.querySelectorAll('[data-proj]').forEach(x => x.setAttribute('aria-pressed', x.dataset.proj === projet));
+    });
+    const champAdr = f.querySelector('#c-adr'), res = f.querySelector('#c-res');
+    champAdr.oninput = () => {
+      clearTimeout(delai); adr = null;
+      const q = champAdr.value.trim();
+      if (q.length < 5) { res.innerHTML = ''; return; }
+      delai = setTimeout(async () => {
+        let l = []; try { l = await rechercherAdresse(q); } catch (e) {}
+        res.innerHTML = l.slice(0, 4).map((a, i) => `<li><button data-i="${i}">${esc(a.label)}</button></li>`).join('');
+        res.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { adr = l[+b.dataset.i]; champAdr.value = adr.label; res.innerHTML = ''; });
+      }, 350);
+    };
+    const lire = async () => {
+      const v = id => f.querySelector(id).value.trim();
+      const ct = { nom: v('#c-nom'), tel: v('#c-tel'), email: v('#c-mail'), projet, note: v('#c-note'), consent: f.querySelector('#c-ok').checked, adresseTexte: v('#c-adr'), maj: maintenant() };
+      if (!ct.nom && !ct.tel) { toast('Note au moins un nom ou un téléphone.'); return null; }
+      if (!ct.adresseTexte) adr = null;
+      else if (!adr || cleAdresse(adr.label) !== cleAdresse(ct.adresseTexte)) {
+        try { const l = await rechercherAdresse(ct.adresseTexte); adr = l[0] && l[0].lat != null ? l[0] : null; } catch (e) { adr = null; }
+      }
+      return ct;
+    };
+    const placer = (q, ct) => {
+      const ici = adr || (s.lat ? { lat: s.lat, lng: s.lng } : position) || carte.getCenter();
+      Object.assign(q, { contact: ct, adresse: adr ? adr.label : '', numero: adr ? adr.numero : '', rue: adr ? adr.rue : '', ville: adr ? adr.ville : '',
+        lat: ici.lat, lng: ici.lng, horsCarte: !adr, maj: maintenant() });
+    };
+    const save = f.querySelector('#c-save');
+    if (save) save.onclick = async () => {
+      const ct = await lire(); if (!ct) return;
+      placer(p, ct); sauver(); dessiner(); majModeSalon(); ouvrirPorte(p.id); toast('Prospect enregistré');
+    };
+    f.querySelectorAll('[data-suite]').forEach(b => b.onclick = async () => {
+      const ct = await lire(); if (!ct) return;
+      const suite = b.dataset.suite, statut = suite === 'r1' ? 'r1' : 'rappel';
+      const np = { id: uid(), origine: 'salon', salon: { id: s.id, nom: s.nom }, statut, auteur: etat.moi, cree: maintenant(),
+        visites: [{ date: maintenant(), statut, note: `Rencontré au salon ${s.nom}`, auteur: etat.moi, canal: 'salon' }] };
+      placer(np, ct);
+      if (besoinsEnAttente.length) { np.besoins = besoinsEnAttente; np.besoinsMaj = maintenant(); besoinsEnAttente = []; }
+      if (photosEnAttente.length) { np.photos = photosEnAttente.map(id => ({ id, date: maintenant(), auteur: etat.moi })); photosEnAttente = []; }
+      etat.portes.push(np); sauver(); dessiner(); majModeSalon();
+      const fiche = () => feuilleFiche(np, true);
+      if (suite === 'r1') feuilleR1(np, fiche);
+      else if (suite === 'rappel') feuilleRappel(np, fiche);
+      else fiche();
+    });
+  });
+}
+function carteProspect(p) {
+  if (p.origine !== 'salon') return '';
+  const c = p.contact || {};
+  return `<div class="carte-suivi">
+    <span class="suivi-titre">${esc(c.nom || 'Prospect sans nom')}<small>Salon ${esc(p.salon.nom)} · ${esc(new Date(p.cree).toLocaleDateString('fr-FR'))}${c.projet ? ' · ' + esc(c.projet) : ''}</small></span>
+    <span class="qui">${esc([c.tel, c.email].filter(Boolean).join(' · ') || 'Pas de coordonnées')}${p.horsCarte ? `<br>${esc(c.adresseTexte || 'Adresse non notée')}${c.adresseTexte ? ' (non placée sur la carte)' : ''}` : ''}${c.note ? '<br>' + esc(c.note) : ''}</span>
+    ${etiquettesBesoins(besoinsDe(p))}
+    <span class="sous" style="margin:0">${c.consent ? 'Accepte d’être recontacté' : 'Accord pour être recontacté non noté'}</span>
+    <div class="ligne-btns">${c.tel ? `<a class="b2 plein" href="tel:${esc(c.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}<button class="b2" id="b-prosp-modif">Modifier</button></div>
+  </div>`;
+}
+
+/* La fiche récapitulative, à s'envoyer */
+function texteFiche(p) {
+  const c = p.contact || {}, r1 = p.r1 && p.r1.date ? p.r1 : null, ra = p.statut === 'rappel' ? p.aRappeler : null, et = etapeDe(p);
+  const suite = et && et !== 'r1' ? texteEtape(suiviDe(p).slice(-1)[0])
+    : r1 ? `R1 ${texteR1(r1).replace(/^./, x => x.toLowerCase())}${r1.duree ? ` (${r1.duree} min)` : ''}`
+    : ra && ra.date ? `À rappeler ${texteRappel(ra).toLowerCase()}`
+    : p.statut === 'rappel' ? (p.salon ? 'Simple contact, à rappeler plus tard' : 'À rappeler (date à fixer)') : STATUTS[p.statut].nom;
+  const nom = c.nom || nomClient(p), tel = c.tel || telClient(p);
+  const L = [];
+  L.push(`FICHE PROSPECT${p.salon ? ' – ' + p.salon.nom : ''}`);
+  L.push(`${p.salon ? 'Rencontré' : 'Porte frappée'} le ${new Date(p.cree).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}${p.auteur ? ' par ' + p.auteur : ''}`);
+  L.push('');
+  L.push(`Nom : ${nom || '–'}`);
+  L.push(`Téléphone : ${tel || '–'}`);
+  if (c.email) L.push(`Email : ${c.email}`);
+  L.push(`Adresse : ${p.horsCarte ? (c.adresseTexte || '–') : p.adresse}`);
+  if (besoinsDe(p).length) L.push(`Besoins : ${texteBesoins(besoinsDe(p))}`);
+  if (c.projet) L.push(`Projet : ${c.projet}`);
+  L.push(`Suite : ${suite}`);
+  if (r1 && r1.besoin) L.push(`Précisions R1 : ${r1.besoin}`);
+  if (ra && ra.note) L.push(`Précisions : ${ra.note}`);
+  if (c.note) L.push(`Note : ${c.note}`);
+  const notes = p.visites.filter(v => v.note && v.canal !== 'salon').map(v => `${new Date(v.date).toLocaleDateString('fr-FR')} : ${v.note}`);
+  if (notes.length) L.push(`Notes de passage : ${notes.join(' / ')}`);
+  if (p.salon) L.push(`Accepte d’être recontacté : ${c.consent ? 'oui' : 'non noté'}`);
+  if ((p.photos || []).length) L.push(`Photos : ${(p.photos || []).length} (jointes si partagées, sinon dans l’appli)`);
+  if (!p.horsCarte) L.push(`Itinéraire : ${lienPlans(p)}`);
+  return L.join('\n');
+}
+const sujetFiche = p => `Prospect ${(p.contact && p.contact.nom) || nomClient(p) || court(p)}${p.salon ? ' – ' + p.salon.nom : ''}`;
+const lienMail = (sujet, corps) => `mailto:${(etat.email || '').replace(/\s/g, '')}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps.replace(/\n/g, '\r\n'))}`;
+async function partagerTexte(titre, texte, fichiers) {
+  try {
+    if (fichiers && fichiers.length && navigator.canShare && navigator.canShare({ files: fichiers })) return await navigator.share({ title: titre, text: texte, files: fichiers });
+    if (navigator.share) return await navigator.share({ title: titre, text: texte });
+    await navigator.clipboard.writeText(texte); toast('Fiche copiée : colle-la où tu veux');
+  } catch (e) { if (e && e.name !== 'AbortError') toast('Partage impossible : ' + e.message); }
+}
+async function fichiersPhotos(p) {
+  const out = [];
+  for (const [i, x] of (p.photos || []).entries()) {
+    const r = await photosDB.lire(x.id).catch(() => null);
+    if (r && r.blob) out.push(new File([r.blob], `${cleAdresse(sujetFiche(p)).replace(/ /g, '-').slice(0, 40)}-${i + 1}.jpg`, { type: 'image/jpeg' }));
+  }
+  return out;
+}
+function feuilleFiche(p, enchainer) {
+  const texte = texteFiche(p), enSalon = enchainer && salonActif();
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Fiche prospect</h2>${BTN_FERMER}</div>
+    <p class="sous">${etat.email ? `Envoi à ${esc(etat.email)}` : 'Ajoute ton adresse mail dans le menu pour recevoir les fiches directement.'}</p>
+    <div class="pile">
+      <pre class="fiche">${esc(texte)}</pre>
+      <a class="b2 jaune" id="fi-mail" href="${esc(lienMail(sujetFiche(p), texte))}" style="justify-content:center;min-height:52px">M’envoyer la fiche par mail</a>
+      <div class="ligne-btns"><button class="b2" id="fi-partage">Partager${(p.photos || []).length ? ' avec les photos' : ''}…</button>
+        ${enSalon ? '<button class="b2 plein" id="fi-suivant">Prospect suivant →</button>' : `<button class="b2" id="fi-porte">Voir le prospect</button>`}</div>
+    </div>`, f => {
+    f.querySelector('#fi-mail').onclick = () => { p.ficheEnvoyee = maintenant(); sauver(); };
+    f.querySelector('#fi-partage').onclick = async () => { await partagerTexte(sujetFiche(p), texte, await fichiersPhotos(p)); p.ficheEnvoyee = maintenant(); sauver(); };
+    const s = f.querySelector('#fi-suivant'); if (s) s.onclick = () => feuilleProspect(null);
+    const o = f.querySelector('#fi-porte'); if (o) o.onclick = () => ouvrirPorte(p.id);
+  });
+}
+
+/* Récap d'un salon : liste, mail groupé, tableau pour Excel */
+function suiteCourte(p) {
+  const et = etapeDe(p);
+  if (et && et !== 'r1') return ETAPES_LONG[et];
+  if (p.r1 && p.r1.date) return 'R1 ' + texteR1(p.r1);
+  if (p.statut === 'rappel') return p.aRappeler && p.aRappeler.date ? 'À rappeler ' + texteRappel(p.aRappeler).toLowerCase() : 'Simple contact';
+  return STATUTS[p.statut].nom;
+}
+function csvSalon(id) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const tete = ['Salon', 'Date', 'Nom', 'Téléphone', 'Email', 'Adresse', 'Besoins', 'Projet', 'Suite', 'Note', 'Recontact accepté', 'Pris par'];
+  const lignes = prospectsSalon(id).reverse().map(p => { const c = p.contact || {}; return [p.salon.nom, new Date(p.cree).toLocaleString('fr-FR'), c.nom, c.tel, c.email,
+    p.horsCarte ? c.adresseTexte : p.adresse, texteBesoins(besoinsDe(p)), c.projet, suiteCourte(p), c.note, c.consent ? 'oui' : 'non', p.auteur]; });
+  return '﻿' + [tete, ...lignes].map(l => l.map(q).join(';')).join('\r\n');
+}
+function feuilleRecapSalon(id, terminer) {
+  const s = salonDe(id); if (!s) return;
+  const ps = prospectsSalon(id), r1 = ps.filter(p => etapeDe(p)).length, rap = ps.filter(p => p.statut === 'rappel').length;
+  const nonEnvoyees = ps.filter(p => !p.ficheEnvoyee).length;
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${esc(s.nom)}</h2>${BTN_FERMER}</div>
+    <p class="sous">${pl(ps.length, 'prospect')} · ${r1} R1 · ${rap} à rappeler${nonEnvoyees && ps.length ? ` · ${pl(nonEnvoyees, 'fiche non envoyée', 'fiches non envoyées')}` : ''}</p>
+    <div class="pile">
+      ${ps.length ? `<ul class="liste">${ps.map(p => `<li><button data-p="${p.id}"><span class="pastille ${etapeDe(p) ? 'r1' : p.statut}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>
+        <span class="txt"><span class="a">${esc((p.contact && p.contact.nom) || (p.contact && p.contact.tel) || 'Sans nom')}</span>
+        <span class="m">${esc([suiteCourte(p), texteBesoins(besoinsDe(p))].filter(Boolean).join(' · '))}</span></span>
+        <span class="dist">${p.ficheEnvoyee ? '✓' : ''}</span></button></li>`).join('')}</ul>` : '<p class="vide">Aucun prospect pour l’instant.</p>'}
+      ${ps.length ? `<a class="b2 jaune" id="rs-mail" href="${esc(lienMail(`Récap salon ${s.nom} – ${pl(ps.length, 'prospect')}`, ps.slice().reverse().map(texteFiche).join('\n\n————————————\n\n')))}" style="justify-content:center;min-height:52px">M’envoyer toutes les fiches</a>
+      <div class="ligne-btns"><button class="b2" id="rs-partage">Partager le récap…</button><button class="b2" id="rs-csv">Tableau pour Excel</button></div>` : ''}
+      <div class="ligne-btns">${salonEnCours === id
+        ? `<button class="b2${terminer ? ' plein' : ''}" id="rs-fin">Terminer le salon</button>${terminer ? '' : '<button class="b2" id="rs-ajout">Nouveau prospect</button>'}`
+        : '<button class="b2" id="rs-reprendre">Reprendre ce salon</button>'}</div>
+      ${terminer && nonEnvoyees ? '<p class="sous" style="margin:0">Pense à t’envoyer les fiches avant de partir : « M’envoyer toutes les fiches ».</p>' : ''}
+    </div>`, f => {
+    f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => feuilleFiche(etat.portes.find(x => x.id === b.dataset.p)));
+    const m = f.querySelector('#rs-mail'); if (m) m.onclick = () => { ps.forEach(p => p.ficheEnvoyee = p.ficheEnvoyee || maintenant()); sauver(); };
+    const pa = f.querySelector('#rs-partage'); if (pa) pa.onclick = () => partagerTexte(`Récap salon ${s.nom}`, ps.slice().reverse().map(texteFiche).join('\n\n————————————\n\n'));
+    const cv = f.querySelector('#rs-csv'); if (cv) cv.onclick = async () => {
+      const nom = `salon-${cleAdresse(s.nom).replace(/ /g, '-')}.csv`, fi = new File([csvSalon(id)], nom, { type: 'text/csv' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [fi] })) await navigator.share({ files: [fi], title: `Salon ${s.nom}` });
+        else { const a = document.createElement('a'); a.href = URL.createObjectURL(fi); a.download = nom; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
+      } catch (e) {}
+    };
+    const fi = f.querySelector('#rs-fin'); if (fi) fi.onclick = () => { quitterSalon(); fermerFeuille(); };
+    const aj = f.querySelector('#rs-ajout'); if (aj) aj.onclick = () => feuilleProspect(null);
+    const re = f.querySelector('#rs-reprendre'); if (re) re.onclick = () => entrerSalon(id);
+  });
+}
 carte.on('click', e => {
   if (voirSecteurs) return toast('Mode secteurs : touche une rue colorée, ou ferme-le avec son bouton à droite');
   nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte');
 });
 $('#b-ici').onclick = async () => {
+  if (salonActif()) return feuilleProspect(null);
   toast('Recherche de ta position…');
   const pos = await positionFraiche();
   if (!pos) return toast('Pas de position GPS : touche la maison sur la carte.');
@@ -1513,7 +1805,7 @@ $('#b-repasser').onclick = () => {
       <span class="txt"><span class="a">${esc(court(p))}</span>
       <span class="m">${p.statut === 'rappel' ? (p.aRappeler && p.aRappeler.date ? `À rappeler ${esc(texteRappel(p.aRappeler).toLowerCase())}` : 'Intéressé, à rappeler') : `Absent${nbAbs > 1 ? ' ×' + nbAbs : ''}`} · ${esc(quand(der.date))}${der.note ? ' · ' + esc(der.note) : ''}</span>
       ${c ? `<span class="conseil">${esc(c)}</span>` : ''}</span>
-      <span class="dist">${distTxt(d)}</span></button></li>`;
+      <span class="dist">${p.horsCarte ? 'salon' : distTxt(d)}</span></button></li>`;
   };
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">À repasser</h2>${BTN_FERMER}</div>
     <p class="sous">${position ? 'Les plus proches de toi d’abord' : 'Les plus proches du centre de la carte'} ; les intéressés en tête.</p>
@@ -1630,7 +1922,7 @@ function passagesBilan(periode, qui) {
   const [deb, fin] = bornesPeriode(periode), out = [];
   for (const p of portes()) p.visites.forEach((v, i) => {
     const d = new Date(v.date);
-    if (d < deb || d >= fin) return;
+    if (v.canal === 'salon' || d < deb || d >= fin) return;
     if (qui === 'moi' && etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi)) return;
     out.push({ p, v, repassage: i > 0 });
   });
@@ -1661,8 +1953,21 @@ function afficherBilan(zone) {
   const s = compter(liste);
   const puces = `<div class="puces">${Object.entries(PERIODES).map(([k, t]) => `<button class="puce" data-per="${k}" aria-pressed="${k === periode}">${t}</button>`).join('')}</div>
     ${plusieurs ? `<div class="puces"><button class="puce" data-qui="moi" aria-pressed="${qui === 'moi'}">Moi${etat.moi ? ' (' + esc(etat.moi) + ')' : ''}</button><button class="puce" data-qui="tous" aria-pressed="${qui === 'tous'}">Toute l’équipe</button></div>` : ''}`;
+  // Salons de la période
+  const [debS, finS] = bornesPeriode(periode), parSalon = new Map();
+  for (const p of portes()) {
+    if (!p.salon) continue;
+    const d = new Date(p.cree);
+    if (d < debS || d >= finS || (plusieurs && qui === 'moi' && etat.moi && cleAdresse(p.auteur) !== cleAdresse(etat.moi))) continue;
+    if (!parSalon.has(p.salon.nom)) parSalon.set(p.salon.nom, []);
+    parSalon.get(p.salon.nom).push(p);
+  }
+  const htmlSalons = parSalon.size ? `<h3>Salons</h3><table class="tableau"><thead><tr><th>Salon</th><th>Prosp.</th><th>R1</th><th>Signés</th></tr></thead><tbody>${[...parSalon.entries()].map(([n, ps]) => {
+    const sg = ps.filter(p => etapeDe(p) === 'signe'), ca = sg.reduce((t, p) => t + montantSigne(p), 0), id = ps[0].salon.id;
+    return `<tr data-salon="${esc(id)}"><td>${esc(n)}${ca ? `<small>${esc(euros(ca))} signés</small>` : ''}</td><td>${ps.length}</td><td>${ps.filter(p => etapeDe(p)).length}</td><td class="${sg.length ? 'r1' : ''}">${sg.length}</td></tr>`;
+  }).join('')}</tbody></table>` : '';
   if (!s.total) {
-    zone.innerHTML = `${puces}<p class="vide">Aucune porte frappée sur cette période.</p>`;
+    zone.innerHTML = `${puces}${htmlSalons || '<p class="vide">Aucune porte frappée sur cette période.</p>'}`;
   } else {
     const ordre = ['r1', 'rappel', 'refus', 'stop', 'absent'];
     const portesDistinctes = new Set(liste.map(x => x.p.id)).size;
@@ -1690,6 +1995,7 @@ function afficherBilan(zone) {
         ${minutes >= 1 ? `<div><span>Temps sur le terrain</span><b>${duree}${jours.size > 1 ? ` sur ${jours.size} jours` : ''}</b></div>` : ''}
         ${rythme ? `<div><span>Rythme</span><b>${rythme}</b></div>` : ''}
       </div>`;
+    html += htmlSalons;
     // Après les R1 : que sont devenus les R1 pris sur la période ?
     const cohorte = [...new Set(liste.filter(x => x.v.statut === 'r1').map(x => x.p))];
     const [deb, fin] = bornesPeriode(periode);
@@ -1759,6 +2065,7 @@ function afficherBilan(zone) {
   zone.querySelectorAll('[data-qui]').forEach(b => b.onclick = () => { choixBilan.qui = b.dataset.qui; garderChoix(); afficherBilan(zone); });
   zone.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
   zone.querySelectorAll('[data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
+  zone.querySelectorAll('[data-salon]').forEach(b => b.onclick = () => feuilleRecapSalon(b.dataset.salon));
   const bj = zone.querySelector('#b-journal'); if (bj) bj.onclick = () => { journalComplet = true; afficherBilan(zone); };
 }
 function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
@@ -1798,6 +2105,10 @@ $('#b-menu').onclick = () => {
       <h3 id="t-bilan">Bilan</h3>
       <div id="bilan" class="bilan"></div>
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
+      <h3>Salons</h3>
+      <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2 plein" id="b-salon">Démarrer un salon</button>'}</div>
+      ${salons().filter(x => x.id !== salonEnCours).length ? `<ul class="liste">${salons().filter(x => x.id !== salonEnCours).sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 6).map(x => `<li><button data-salon="${x.id}"><span class="txt"><span class="a">${esc(x.nom)}</span><span class="m">${esc(new Date(x.debut).toLocaleDateString('fr-FR'))} · ${pl(prospectsSalon(x.id).length, 'prospect')}</span></span></button></li>`).join('')}</ul>` : ''}
+      <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
       <h3>Partager avec ton collègue</h3>
       <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
       <div class="ligne-btns"><button class="b2 plein" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
@@ -1818,6 +2129,10 @@ $('#b-menu').onclick = () => {
     afficherBilan(f.querySelector('#bilan'));
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
+    f.querySelector('#i-mail').onchange = e => { etat.email = e.target.value.trim(); sauver(); toast('Adresse mail enregistrée'); };
+    const bsa = f.querySelector('#b-salon'); if (bsa) bsa.onclick = feuilleSalon;
+    const bsr = f.querySelector('#b-salon-recap'); if (bsr) bsr.onclick = () => feuilleRecapSalon(salonEnCours);
+    f.querySelectorAll('.pile > .liste [data-salon]').forEach(b => b.onclick = () => feuilleRecapSalon(b.dataset.salon));
     f.querySelector('#b-besoins-ok').onclick = () => {
       etat.besoinsListe = [...new Set(f.querySelector('#i-besoins').value.split('\n').map(x => x.trim()).filter(Boolean))];
       etat.besoinsListeMaj = maintenant(); sauver(); toast(`Liste enregistrée : ${etat.besoinsListe.length} besoins`);
@@ -1838,7 +2153,7 @@ $('#b-menu').onclick = () => {
   });
 };
 async function exporter() {
-  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes.map(p => Object.assign({}, p, { photos: undefined })), rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '' });
+  const json = JSON.stringify({ app: 'carte-prospection', version: 1, par: etat.moi, exporteLe: maintenant(), chantiers: etat.chantiers, portes: etat.portes.map(p => Object.assign({}, p, { photos: undefined })), rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, salons: salons(), besoinsListeMaj: etat.besoinsListeMaj || '' });
   const nom = `prospection-${cleAdresse(etat.moi || 'moi').replace(/ /g, '-')}-${jourCle(new Date())}.json`;
   const fichier = new File([json], nom, { type: 'application/json' });
   try {
@@ -1882,6 +2197,9 @@ function fusionner(src) {
     loc.visites.sort((a, b) => a.date < b.date ? -1 : 1);
     if (loc.visites.length) loc.statut = loc.visites[loc.visites.length - 1].statut;
     if (p.r1 && (!loc.r1 || (p.r1.cree || '') > (loc.r1.cree || '') || p.maj > loc.maj)) loc.r1 = p.r1;
+    if (p.contact && (!loc.contact || (p.contact.maj || '') > (loc.contact.maj || ''))) {
+      Object.assign(loc, { contact: p.contact, adresse: p.adresse, numero: p.numero, rue: p.rue, ville: p.ville, lat: p.lat, lng: p.lng, horsCarte: p.horsCarte });
+    }
     if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
@@ -1892,6 +2210,7 @@ function fusionner(src) {
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi) majs++;
   }
   if ((src.besoinsListeMaj || '') > (etat.besoinsListeMaj || '')) { etat.besoinsListe = src.besoinsListe; etat.besoinsListeMaj = src.besoinsListeMaj; }
+  for (const x of src.salons || []) { const l = salons().find(y => y.id === x.id); if (!l) etat.salons = [...salons(), x]; else if ((x.maj || '') > (l.maj || '')) Object.assign(l, x); }
   // Rues terminées : la décision la plus récente gagne
   etat.rues = etat.rues || {};
   for (const [k, r] of Object.entries(src.rues || {})) if (!etat.rues[k] || r.maj > etat.rues[k].maj) etat.rues[k] = r;
@@ -1900,6 +2219,8 @@ function fusionner(src) {
 
 /* ───────── Démarrage ───────── */
 dessiner();
+if (salonEnCours && !salonDe(salonEnCours)) salonEnCours = null;
+majModeSalon();
 // Ménage : photos prises pour une porte jamais enregistrée (liste figée au démarrage, avant toute nouvelle photo)
 photosDB.cles().then(cles => {
   const utiles = new Set(etat.portes.flatMap(p => (p.photos || []).map(x => x.id)).concat(photosEnAttente));
@@ -1908,7 +2229,7 @@ photosDB.cles().then(cles => {
 try { tournee = JSON.parse(localStorage.getItem(CLE_T)); } catch (e) { tournee = null; }
 if (tournee && tournee.rue) { document.body.classList.add('en-tournee'); setTimeout(() => afficherTournee(true), 300); } else tournee = null;
 if (portes().length || chantiers().length) {
-  const pts = [...portes().map(p => [p.lat, p.lng]), ...chantiers().map(c => [c.lat, c.lng])];
+  const pts = [...portes().filter(p => !p.horsCarte).map(p => [p.lat, p.lng]), ...chantiers().map(c => [c.lat, c.lng])];
   carte.fitBounds(pts, { maxZoom: 17, padding: [40, 40] });
 }
 if (!etat.moi) {
