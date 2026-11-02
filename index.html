@@ -485,9 +485,31 @@ function sauver() {
   enregistrerLocal();
   if (typeof planifierSynchro === 'function') planifierSynchro();
 }
+// Les données vivent dans IndexedDB (pas de limite de 5 Mo) ; localStorage garde une copie tant qu'elle y tient.
+const etatDB = (() => {
+  let base;
+  const ouvrir = () => base || (base = new Promise((ok, ko) => {
+    const r = indexedDB.open('carte-prospection-donnees', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('etat');
+    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+  }));
+  const tx = async (mode, fn) => {
+    const db = await ouvrir();
+    return new Promise((ok, ko) => {
+      const t = db.transaction('etat', mode), req = fn(t.objectStore('etat'));
+      t.oncomplete = () => ok(req && req.result); t.onerror = () => ko(t.error); t.onabort = () => ko(t.error || new Error('stockage plein'));
+    });
+  };
+  return { mettre: v => tx('readwrite', s => s.put(v, 'principal')), lire: () => tx('readonly', s => s.get('principal')) };
+})();
+let copieLocaleOk = true;
 function enregistrerLocal() {
-  try { localStorage.setItem(CLE, JSON.stringify(etat)); }
-  catch (e) { toast("Enregistrement impossible : stockage plein ou navigation privée."); }
+  etat._t = maintenant();
+  const texte = JSON.stringify(etat);
+  let okLocal = true;
+  try { localStorage.setItem(CLE, texte); copieLocaleOk = true; }
+  catch (e) { okLocal = false; if (copieLocaleOk) { copieLocaleOk = false; try { localStorage.removeItem(CLE); } catch (e2) {} } }
+  etatDB.mettre(texte).catch(() => { if (!okLocal) toast('Enregistrement impossible : stockage du téléphone plein.'); });
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
 }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -553,10 +575,10 @@ async function rechercherAdresse(q) {
 /* ───────── Carte ───────── */
 const carte = L.map('carte', { zoomControl: false, attributionControl: true, tap: true }).setView(CENTRE, 15);
 const plan = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 20, maxNativeZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 20, maxNativeZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 });
 const aerien = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM_0_19&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {
-  maxZoom: 20, maxNativeZoom: 19, attribution: '© IGN',
+  maxZoom: 20, maxNativeZoom: 19, crossOrigin: true, attribution: '© IGN',
 });
 let vueAerienne = false;
 try { vueAerienne = localStorage.getItem(CLE + ':aerien') === '1'; } catch (e) {}
@@ -613,10 +635,10 @@ function majCompteurs() {
   const sa = salonActif();
   if (sa) {
     const ps = prospectsSalon(sa.id).filter(p => jourCle(p.cree) === auj);
-    $('#jour-t').textContent = 'Salon · aujourd’hui';
+    $('#jour-t').textContent = navigator.onLine ? 'Salon · aujourd’hui' : 'Salon · hors réseau';
     $('#jour').textContent = `${pl(ps.length, 'prospect')} · ${ps.filter(p => etapeDe(p)).length} R1`;
   } else {
-    $('#jour-t').textContent = 'Aujourd’hui';
+    $('#jour-t').textContent = navigator.onLine ? 'Aujourd’hui' : 'Aujourd’hui · hors réseau';
     $('#jour').textContent = n === 0 ? 'Aucune porte pour l’instant'
       : `${n} porte${n > 1 ? 's' : ''} · ${ouvertes} ouverte${ouvertes > 1 ? 's' : ''} · ${r1} R1`;
   }
@@ -692,7 +714,8 @@ async function nouvellePorteA(lat, lng, origine) {
   marqueurTemp = L.marker([lat, lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="m-porte temp">?</div>' }), interactive: false }).addTo(carte);
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Recherche de l'adresse…</h2>${BTN_FERMER}</div>`);
   let adr = null;
-  try { adr = await adresseInverse(lat, lng); } catch (e) { adr = null; }
+  let horsReseau = false;
+  try { adr = await adresseInverse(lat, lng); } catch (e) { adr = null; horsReseau = true; }
   if (!$('#feuille').classList.contains('ouverte')) return;
   // Se caler sur le point de l'adresse s'il est proche de l'endroit touché
   let pos = [lat, lng];
@@ -701,7 +724,7 @@ async function nouvellePorteA(lat, lng, origine) {
   const deja = porteExistante(adr, pos[0], pos[1]);
   if (deja) { carte.removeLayer(marqueurTemp); marqueurTemp = null; return ouvrirPorte(deja.id); }
   marqueurTemp.setLatLng(pos);
-  feuillePorte(null, { adr, lat: pos[0], lng: pos[1] });
+  feuillePorte(null, { adr, lat: pos[0], lng: pos[1], horsReseau });
 }
 function ouvrirPorte(id) {
   const p = etat.portes.find(x => x.id === id); if (!p) return;
@@ -721,7 +744,7 @@ function feuillePorte(p, neuf) {
   const cartes = p ? carteProspect(p) + carteRappel(p) + (['r2', 'devis', 'signe', 'perdu'].includes(etapeDe(p)) ? '' : carteR1(p)) + carteSuivi(p) : '';
   const nbPhotos = p ? photosDe(p).length : photosEnAttente.length, nbBesoins = besoinsDe(p).length;
   const resume = [nbPhotos && pl(nbPhotos, 'photo'), nbBesoins && pl(nbBesoins, 'besoin')].filter(Boolean).join(' · ');
-  const ouvrirDetails = !p && !neuf.adr;
+  const ouvrirDetails = !p && !neuf.adr && !neuf.horsReseau;
   const MAX_H = 3, histoLi = histo ? histo.split('</li>').filter(Boolean).map(x => x + '</li>') : [];
   ouvrirFeuille(`
     <div class="entete"><h2 id="f-titre">${esc(titre)}</h2>${BTN_FERMER}</div>
@@ -734,7 +757,7 @@ function feuillePorte(p, neuf) {
         <summary>Détails${resume ? '' : ' : photos, besoins, note'}<span class="resume">${esc(resume)}</span>${CHEVRON}</summary>
         <div class="details-corps">
           ${p ? '' : `<label class="champ">Adresse<input id="i-adr" value="${esc(adresse)}" placeholder="N° et rue" autocomplete="off"></label>
-            ${neuf.adr ? '' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
+            ${neuf.adr ? '' : neuf.horsReseau ? '<p class="sous" style="margin:-6px 0 0">Hors réseau : laisse vide, l’adresse sera complétée toute seule au retour du réseau.</p>' : '<p class="sous" style="margin:-6px 0 0">Adresse non trouvée automatiquement : saisis-la.</p>'}`}
           <label class="champ">Note du passage <span style="text-transform:none;letter-spacing:0;font-weight:500">(à écrire avant de choisir le statut)</span><input id="i-note" placeholder="ex. toit moussu, revenir le soir" autocomplete="off"></label>
           ${champBesoins(p)}
           <div class="photos" id="photos" aria-label="Photos de la maison"></div>
@@ -769,7 +792,7 @@ function feuillePorte(p, neuf) {
         const a = f.querySelector('#i-adr').value.trim();
         const memeAdr = neuf.adr && cleAdresse(a) === cleAdresse(neuf.adr.label);
         const np = {
-          id: uid(), adresse: a || 'Adresse inconnue', numero: memeAdr ? neuf.adr.numero : ((a.match(/^\s*(\d+\s?(bis|ter|[a-d])?)\b/i) || [])[1] || ''),
+          id: uid(), adresse: a || (neuf.horsReseau ? 'Adresse à compléter' : 'Adresse inconnue'), aCompleter: !!(neuf.horsReseau && !a) || undefined, numero: memeAdr ? neuf.adr.numero : ((a.match(/^\s*(\d+\s?(bis|ter|[a-d])?)\b/i) || [])[1] || ''),
           rue: memeAdr ? neuf.adr.rue : '', ville: memeAdr ? neuf.adr.ville : '',
           lat, lng, statut, visites: [], auteur: etat.moi, cree: maintenant(), maj: maintenant(),
         };
@@ -1745,7 +1768,7 @@ function feuillePrep(p) {
     const vue = f.querySelector('#vue-toit');
     if (vue) {
       cartePrep = L.map(vue, { zoomControl: false, attributionControl: false }).setView([p.lat, p.lng], 19);
-      L.tileLayer(URL_ORTHO, { maxZoom: 20, maxNativeZoom: 19 }).addTo(cartePrep);
+      L.tileLayer(URL_ORTHO, { maxZoom: 20, maxNativeZoom: 19, crossOrigin: true }).addTo(cartePrep);
       L.circle([p.lat, p.lng], { radius: 12, className: 'cible-toit', interactive: false }).addTo(cartePrep);
       setTimeout(() => cartePrep && cartePrep.invalidateSize(), 300);
     }
@@ -2511,6 +2534,8 @@ $('#b-menu').onclick = (demande) => {
       <h3>Partager par fichier</h3>
       <p class="sous" style="margin:0">Sans la synchro : envoie ton fichier (AirDrop, Messages…), l’autre l’importe et vos portes sont fusionnées, sans doublon. Dernier envoi : ${esc(derniere)}.</p>
       <div class="ligne-btns"><button class="b2" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
+      <h3>Stockage et hors réseau</h3>
+      <p class="sous" style="margin:0" id="etat-stockage">Calcul…</p>
       <h3>Bon à savoir</h3>
       <p class="sous" style="margin:0">Les R1, R2 et rappels passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : ne le renomme pas. Les photos voyagent avec la synchro, mais pas avec « Envoyer mes portes ».</p>
       <h3>Légende</h3>
@@ -2525,6 +2550,14 @@ $('#b-menu').onclick = (demande) => {
       $('#feuille').scrollTop = 0;
     });
     f.querySelector('#b-zone-regler').onclick = feuilleZone;
+    (async () => {
+      const el = f.querySelector('#etat-stockage'); if (!el) return;
+      let txt = `${pl(portes().length, 'porte')}, ${pl(etat.portes.reduce((t, p) => t + photosDe(p).length, 0), 'photo')}`;
+      try { const e = await navigator.storage.estimate(); txt += ` · ${Math.max(1, Math.round(e.usage / 1048576))} Mo utilisés sur le téléphone`; } catch (e) {}
+      let garde = false; try { garde = await navigator.storage.persisted(); } catch (e) {}
+      const attente = portes().filter(p => p.aCompleter || p.approx).length;
+      el.textContent = `${txt}. ${garde ? 'Protégé contre l’effacement automatique.' : 'Ouvre la carte depuis son icône sur l’écran d’accueil pour la protéger de l’effacement automatique.'} Fonctionne sans réseau : les fonds de carte déjà vus restent affichés.${attente ? ` ${pl(attente, 'adresse')} en attente du réseau.` : ''}`;
+    })();
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
     f.querySelector('#sy-ok').onclick = async () => {
@@ -2635,7 +2668,44 @@ function fusionner(src) {
   return { ajouts, majs };
 }
 
+/* ───────── Hors réseau : ce qui attend le retour du réseau ───────── */
+let completionEnCours = false;
+async function completerAdresses() {
+  if (completionEnCours || !navigator.onLine) return;
+  const aFaire = portes().filter(p => p.aCompleter || p.approx);
+  if (!aFaire.length) return;
+  completionEnCours = true; let n = 0;
+  try {
+    for (const p of aFaire) {
+      try {
+        if (p.aCompleter) {
+          const a = await adresseInverse(p.lat, p.lng);
+          if (a && metres([p.lat, p.lng], [a.lat, a.lng]) < 80) {
+            Object.assign(p, { adresse: a.label, numero: a.numero, rue: a.rue, ville: a.ville, maj: maintenant() });
+            delete p.aCompleter; n++;
+          }
+        } else if (p.approx && p.numero && p.rue) {
+          const l = await rechercherAdresse(`${p.numero} ${p.rue} ${p.ville || ''}`);
+          const a = l.find(x => String(x.numero) === String(p.numero) && cleAdresse(x.rue) === cleAdresse(p.rue));
+          if (a && a.lat != null) { Object.assign(p, { lat: a.lat, lng: a.lng, adresse: a.label, maj: maintenant() }); delete p.approx; n++; }
+        }
+      } catch (e) { break; }   // réseau encore instable : on réessaiera plus tard
+    }
+  } finally { completionEnCours = false; }
+  if (n) { sauver(); dessiner(); toast(`${n === 1 ? '1 adresse complétée' : n + ' adresses complétées'} depuis le retour du réseau`); }
+}
+window.addEventListener('online', () => { majCompteurs(); toast('Réseau retrouvé : mise à jour en cours'); setTimeout(completerAdresses, 1500); });
+window.addEventListener('offline', () => { majCompteurs(); toast('Hors réseau : continue de noter, tout sera complété au retour du réseau'); });
+setInterval(completerAdresses, 5 * 60000);
+
 /* ───────── Démarrage ───────── */
+(async () => {
+try {
+  const texte = await etatDB.lire();
+  const copie = texte ? JSON.parse(texte) : null;
+  if (copie && copie.version === 1 && Array.isArray(copie.portes) && (!etat._t || (copie._t || '') > etat._t)) etat = Object.assign(vide(), copie);
+  if (!texte && etat.portes.length) enregistrerLocal();   // première fois : on recopie dans IndexedDB
+} catch (e) {}
 dessiner();
 if (salonEnCours && !salonDe(salonEnCours)) salonEnCours = null;
 planifierSynchro(1500);
@@ -2667,6 +2737,12 @@ if (!etat.moi) {
 } else {
   demarrerGPS();
 }
+setTimeout(completerAdresses, 4000);
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+})();
+
 </script>
 </body>
 </html>
