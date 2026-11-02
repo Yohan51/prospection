@@ -1870,19 +1870,33 @@ function dansZone(lat, lng) {
   const polys = zoneGeo.type === 'MultiPolygon' ? zoneGeo.coordinates : [zoneGeo.coordinates];
   return polys.some(p => dansAnneau(lng, lat, p[0]) && !p.slice(1).some(t => dansAnneau(lng, lat, t)));
 }
+let derniereErreurTrajet = '';
 async function trajet(lat, lng) {
   const k = `${reglageZone.lat.toFixed(4)},${reglageZone.lng.toFixed(4)}>${(+lat).toFixed(4)},${(+lng).toFixed(4)}`;
   if (trajetsCache[k]) return trajetsCache[k];
-  try {
-    const j = await geo(`https://data.geopf.fr/navigation/itineraire?resource=bdtopo-osrm&profile=car&optimization=fastest&start=${reglageZone.lng},${reglageZone.lat}&end=${lng},${lat}&geometryFormat=geojson&distanceUnit=kilometer&timeUnit=minute`, 15000);
-    if (j.distance != null && j.duration != null) {
-      const t = { min: Math.round(+j.duration), km: Math.round(+j.distance * 10) / 10, coords: j.geometry ? j.geometry.coordinates.map(c => [c[1], c[0]]) : null };
+  const dep = `${reglageZone.lng},${reglageZone.lat}`, arr = `${lng},${lat}`, erreurs = [];
+  // Plusieurs calculateurs, du plus rapide au plus lent ; le premier qui répond gagne
+  const essais = [
+    ['IGN', async () => { const j = await geo(`https://data.geopf.fr/navigation/itineraire?resource=bdtopo-osrm&profile=car&optimization=fastest&start=${dep}&end=${arr}&geometryFormat=geojson&distanceUnit=kilometer&timeUnit=minute`, 20000);
+      return j.distance != null && j.duration != null ? { min: +j.duration, km: +j.distance, coords: j.geometry && j.geometry.coordinates } : null; }],
+    ['IGN Valhalla', async () => { const j = await geo(`https://data.geopf.fr/navigation/itineraire?resource=bdtopo-valhalla&profile=car&optimization=fastest&start=${dep}&end=${arr}&geometryFormat=geojson&distanceUnit=kilometer&timeUnit=minute`, 20000);
+      return j.distance != null && j.duration != null ? { min: +j.duration, km: +j.distance, coords: j.geometry && j.geometry.coordinates } : null; }],
+    ['OSRM', async () => { const j = await geo(`https://router.project-osrm.org/route/v1/driving/${dep};${arr}?overview=full&geometries=geojson`, 20000);
+      const r = j.routes && j.routes[0]; return r ? { min: r.duration / 60, km: r.distance / 1000, coords: r.geometry && r.geometry.coordinates } : null; }],
+  ];
+  for (const [nom, essai] of essais) {
+    try {
+      const r = await essai();
+      if (!r) { erreurs.push(nom + ' : réponse vide'); continue; }
+      const t = { min: Math.round(r.min), km: Math.round(r.km * 10) / 10, coords: r.coords ? r.coords.map(c => [c[1], c[0]]) : null };
       const cles = Object.keys(trajetsCache); if (cles.length > 400) delete trajetsCache[cles[0]];
       trajetsCache[k] = { min: t.min, km: t.km };
       try { localStorage.setItem(CLE + ':trajets', JSON.stringify(trajetsCache)); } catch (e) {}
+      derniereErreurTrajet = '';
       return t;
-    }
-  } catch (e) {}
+    } catch (e) { erreurs.push(`${nom} : ${e.name === 'AbortError' ? 'trop long' : e.message || e}`); }
+  }
+  derniereErreurTrajet = erreurs.join(' · ');
   return null;
 }
 const dureeTxt = m => m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m / 60} h`;
@@ -1894,7 +1908,15 @@ async function remplirZone(racine) {
     if (!lat && !lng) { el.hidden = true; continue; }
     const t = await trajet(lat, lng);
     if (!el.isConnected) return;
-    if (!t) { el.textContent = 'Temps de route indisponible pour le moment.'; el.className = 'zone-info'; continue; }
+    if (!t) {
+      // Pas d'itinéraire : on répond quand même avec le contour de la zone et la distance à vol d'oiseau
+      await chargerZone();
+      const z = dansZone(lat, lng), vol = Math.round(metres([reglageZone.lat, reglageZone.lng], [lat, lng]) / 100) / 10;
+      el.className = 'zone-info' + (z === true ? ' dedans' : z === false ? ' dehors' : '');
+      el.innerHTML = `${z === true ? '✅ Dans la zone' : z === false ? '❌ Hors zone' : 'Zone non calculée'} ${dureeTxt(reglageZone.minutes)} · ${String(vol).replace('.', ',')} km à vol d’oiseau`
+        + `<br><small style="font-weight:400;color:var(--doux)">Temps de route indisponible (${esc(derniereErreurTrajet || 'réseau')})</small>`;
+      continue;
+    }
     const ok = t.min <= reglageZone.minutes;
     el.className = 'zone-info ' + (ok ? 'dedans' : 'dehors');
     el.textContent = `${ok ? '✅ Dans la zone' : '❌ Hors zone'} ${dureeTxt(reglageZone.minutes)} · ${dureeTxt(t.min)} de route (${String(t.km).replace('.', ',')} km)`;
