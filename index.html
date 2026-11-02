@@ -193,6 +193,13 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .menu-btn { position: relative; }
 .menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
 
+/* Zone de chalandise */
+.zone-info { margin: 0; font-size: 14px; color: var(--doux); }
+.zone-info.dedans { color: var(--st-r1); font-weight: 600; }
+.zone-info.dehors { color: var(--st-stop); font-weight: 600; }
+.lbl-zone { background: var(--marine); color: #fff; border: 0; border-radius: 6px; font: 600 13px/1 var(--f-titre); padding: 4px 7px; box-shadow: none; }
+.lbl-zone:before { display: none; }
+
 /* Préparer le R1 */
 .vue-toit { height: 210px; border-radius: 12px; overflow: hidden; background: #3a4855; }
 .cible-toit { stroke: var(--jaune); stroke-width: 3; fill: none; }
@@ -397,6 +404,9 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
 
 <div class="bandeau-salon" id="bandeau-salon" hidden></div>
 <div class="cote">
+  <button class="rond" id="b-zone" aria-label="Zone de chalandise" title="Zone de chalandise : temps de route depuis l’entreprise">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.5" fill="currentColor"/><circle cx="12" cy="12" r="6" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="10"/></svg>
+  </button>
   <button class="rond" id="b-secteurs" aria-label="Afficher les secteurs" title="Secteurs : ce que chaque rue a donné">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 9 4M20 20 15 4"/><path d="M12 6v2M12 11v2M12 16v2"/></svg>
   </button>
@@ -708,6 +718,7 @@ function feuillePorte(p, neuf) {
   ouvrirFeuille(`
     <div class="entete"><h2 id="f-titre">${esc(titre)}</h2>${BTN_FERMER}</div>
     <p class="sous">${p && p.origine === 'salon' ? `Prospect salon · ${p.horsCarte ? 'adresse non placée' : esc(court(p))} · ` : ''}${p ? '' : 'Nouvelle porte · '}${p && p.ville ? esc(p.ville) + ' · ' : ''}${p && p.horsCarte ? '' : pres}${p ? ` · ${p.visites.length} passage${p.visites.length > 1 ? 's' : ''}` : ''}</p>
+    ${p && !p.horsCarte ? ligneZone(p.lat, p.lng) : ''}
     <div class="pile">
       ${cartes}
       <div class="statuts">${boutons}</div>
@@ -733,6 +744,7 @@ function feuillePorte(p, neuf) {
     brancherBesoins(f, p);
     brancherPhotos(f.querySelector('#photos'), p);
     const bfi = f.querySelector('#b-fiche'); if (bfi) bfi.onclick = () => feuilleFiche(p);
+    remplirZone(f);
     const bpm = f.querySelector('#b-prosp-modif'); if (bpm) bpm.onclick = () => feuilleProspect(p);
     const bh = f.querySelector('#b-histo');
     if (bh) bh.onclick = () => { f.querySelector('.histo').innerHTML = histoLi.join(''); bh.remove(); };
@@ -1456,6 +1468,7 @@ function feuilleProspect(p) {
       </div>
       <label class="champ">Adresse du chantier<input id="c-adr" value="${esc(adr ? adr.label : (c.adresseTexte || ''))}" placeholder="ex. 12 rue des Lilas, Fagnières" autocomplete="off"></label>
       <ul class="resultats" id="c-res"></ul>
+      ${ligneZone(adr ? adr.lat : 0, adr ? adr.lng : 0)}
       ${champBesoins(p)}
       <div class="champ" style="gap:8px">Projet<div class="puces">${PROJETS.map(x => `<button class="puce" data-proj="${esc(x)}" aria-pressed="${x === projet}">${esc(x)}</button>`).join('')}</div></div>
       <label class="champ">Note<textarea id="c-note" placeholder="ex. maison de 1975, tuiles mécaniques, très moussu côté nord">${esc(c.note || '')}</textarea></label>
@@ -1469,6 +1482,7 @@ function feuilleProspect(p) {
     </div>`, f => {
     brancherBesoins(f, p);
     brancherPhotos(f.querySelector('#photos'), p);
+    remplirZone(f);
     f.querySelectorAll('[data-proj]').forEach(b => b.onclick = () => {
       projet = projet === b.dataset.proj ? '' : b.dataset.proj;
       f.querySelectorAll('[data-proj]').forEach(x => x.setAttribute('aria-pressed', x.dataset.proj === projet));
@@ -1481,7 +1495,10 @@ function feuilleProspect(p) {
       delai = setTimeout(async () => {
         let l = []; try { l = await rechercherAdresse(q); } catch (e) {}
         res.innerHTML = l.slice(0, 4).map((a, i) => `<li><button data-i="${i}">${esc(a.label)}</button></li>`).join('');
-        res.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { adr = l[+b.dataset.i]; champAdr.value = adr.label; res.innerHTML = ''; });
+        res.querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+          adr = l[+b.dataset.i]; champAdr.value = adr.label; res.innerHTML = '';
+          const z = f.querySelector('.zone-info'); z.hidden = false; z.dataset.zlat = adr.lat; z.dataset.zlng = adr.lng; z.className = 'zone-info'; z.textContent = 'Temps de route…'; remplirZone(f);
+        });
       }, 350);
     };
     const lire = async () => {
@@ -1690,6 +1707,7 @@ function feuillePrep(p) {
       <div class="carte-r1">
         <span class="quand-r1">${rdv && rdv.date ? esc(texteR1(rdv)) : 'Date non notée'}${rdv && rdv.duree ? ` <span style="font-weight:500;font-size:15px">· ${rdv.duree} min</span>` : ''}</span>
         <span class="qui">${esc([nom, tel].filter(Boolean).join(' · ') || 'Coordonnées non notées')}${c.email ? '<br>' + esc(c.email) : ''}<br>${esc(p.horsCarte ? (c.adresseTexte || 'Adresse non notée') : p.adresse)}</span>
+        ${p.horsCarte ? '' : ligneZone(p.lat, p.lng)}
         <div class="ligne-btns">${tel ? `<a class="b2 plein" href="tel:${esc(tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${p.horsCarte ? '' : liensItineraire(p.lat, p.lng)}</div>
       </div>
       ${p.horsCarte ? '' : '<div class="vue-toit" id="vue-toit" aria-label="Vue aérienne du toit"></div>'}
@@ -1715,6 +1733,7 @@ function feuillePrep(p) {
     f.querySelector('#prep-porte').onclick = () => { garder(); ouvrirPorte(p.id); };
     f.querySelector('#prep-fiche').onclick = () => { garder(); feuilleFiche(p); };
     brancherPhotos(f.querySelector('#photos'), p);
+    remplirZone(f);
     const vue = f.querySelector('#vue-toit');
     if (vue) {
       cartePrep = L.map(vue, { zoomControl: false, attributionControl: false }).setView([p.lat, p.lng], 19);
@@ -1813,6 +1832,141 @@ function majEtatSynchro() { const e = $('#etat-synchro'); if (e) e.textContent =
 setInterval(() => { if (document.visibilityState === 'visible') synchroniser(); }, 90000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') planifierSynchro(500); });
 window.addEventListener('online', () => planifierSynchro(1000));
+/* ───────── Zone de chalandise : la zone atteignable en X min de route depuis l'entreprise ───────── */
+const CLE_Z = CLE + ':zone';
+const DUREES_ZONE = [30, 45, 60, 90];
+let reglageZone = { lat: 48.9566, lng: 4.3631, nom: 'Centre de Châlons', minutes: 60, voir: false };
+try { Object.assign(reglageZone, JSON.parse(localStorage.getItem(CLE_Z)) || {}); } catch (e) {}
+const garderZone = () => { try { localStorage.setItem(CLE_Z, JSON.stringify(reglageZone)); } catch (e) {} };
+let zoneGeo = null, zoneCle = '', calqueZone = L.layerGroup(), trajetsCache = {};
+try { trajetsCache = JSON.parse(localStorage.getItem(CLE + ':trajets')) || {}; } catch (e) {}
+const cleZone = () => `${reglageZone.lat.toFixed(5)},${reglageZone.lng.toFixed(5)},${reglageZone.minutes}`;
+async function chargerZone() {
+  const k = cleZone();
+  if (zoneGeo && zoneCle === k) return zoneGeo;
+  try { const c = JSON.parse(localStorage.getItem(CLE_Z + ':geo')); if (c && c.k === k && Date.now() - c.t < 30 * 864e5) { zoneCle = k; return zoneGeo = c.geo; } } catch (e) {}
+  for (const res of ['bdtopo-valhalla', 'bdtopo-pgr']) {
+    try {
+      const j = await geo(`https://data.geopf.fr/navigation/isochrone?resource=${res}&point=${reglageZone.lng},${reglageZone.lat}&costType=time&costValue=${reglageZone.minutes}&timeUnit=minute&profile=car&direction=departure&geometryFormat=geojson`, 25000);
+      if (j.geometry && j.geometry.coordinates) {
+        zoneGeo = j.geometry; zoneCle = k;
+        try { localStorage.setItem(CLE_Z + ':geo', JSON.stringify({ k, t: Date.now(), geo: zoneGeo })); } catch (e) {}
+        return zoneGeo;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+function dansAnneau(x, y, anneau) {
+  let dedans = false;
+  for (let i = 0, j = anneau.length - 1; i < anneau.length; j = i++) {
+    const [xi, yi] = anneau[i], [xj, yj] = anneau[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
+  }
+  return dedans;
+}
+function dansZone(lat, lng) {
+  if (!zoneGeo || zoneCle !== cleZone()) return null;
+  const polys = zoneGeo.type === 'MultiPolygon' ? zoneGeo.coordinates : [zoneGeo.coordinates];
+  return polys.some(p => dansAnneau(lng, lat, p[0]) && !p.slice(1).some(t => dansAnneau(lng, lat, t)));
+}
+async function trajet(lat, lng) {
+  const k = `${reglageZone.lat.toFixed(4)},${reglageZone.lng.toFixed(4)}>${(+lat).toFixed(4)},${(+lng).toFixed(4)}`;
+  if (trajetsCache[k]) return trajetsCache[k];
+  try {
+    const j = await geo(`https://data.geopf.fr/navigation/itineraire?resource=bdtopo-osrm&profile=car&optimization=fastest&start=${reglageZone.lng},${reglageZone.lat}&end=${lng},${lat}&geometryFormat=geojson&distanceUnit=kilometer&timeUnit=minute`, 15000);
+    if (j.distance != null && j.duration != null) {
+      const t = { min: Math.round(+j.duration), km: Math.round(+j.distance * 10) / 10, coords: j.geometry ? j.geometry.coordinates.map(c => [c[1], c[0]]) : null };
+      const cles = Object.keys(trajetsCache); if (cles.length > 400) delete trajetsCache[cles[0]];
+      trajetsCache[k] = { min: t.min, km: t.km };
+      try { localStorage.setItem(CLE + ':trajets', JSON.stringify(trajetsCache)); } catch (e) {}
+      return t;
+    }
+  } catch (e) {}
+  return null;
+}
+const dureeTxt = m => m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m / 60} h`;
+// Petite ligne « ✅ Dans la zone · 18 min de route » sous une adresse
+const ligneZone = (lat, lng) => `<p class="zone-info" data-zlat="${lat}" data-zlng="${lng}">Temps de route depuis ${esc(reglageZone.nom)}…</p>`;
+async function remplirZone(racine) {
+  for (const el of racine.querySelectorAll('.zone-info[data-zlat]')) {
+    const lat = +el.dataset.zlat, lng = +el.dataset.zlng;
+    if (!lat && !lng) { el.hidden = true; continue; }
+    const t = await trajet(lat, lng);
+    if (!el.isConnected) return;
+    if (!t) { el.textContent = 'Temps de route indisponible pour le moment.'; el.className = 'zone-info'; continue; }
+    const ok = t.min <= reglageZone.minutes;
+    el.className = 'zone-info ' + (ok ? 'dedans' : 'dehors');
+    el.textContent = `${ok ? '✅ Dans la zone' : '❌ Hors zone'} ${dureeTxt(reglageZone.minutes)} · ${dureeTxt(t.min)} de route (${String(t.km).replace('.', ',')} km)`;
+  }
+}
+async function dessinerZone(cadrer) {
+  calqueZone.clearLayers();
+  $('#b-zone').classList.toggle('actif', reglageZone.voir);
+  if (!reglageZone.voir) { carte.removeLayer(calqueZone); return; }
+  calqueZone.addTo(carte);
+  L.circleMarker([reglageZone.lat, reglageZone.lng], { radius: 8, color: '#fff', weight: 2.5, fillColor: '#1f4577', fillOpacity: 1, interactive: false })
+    .bindTooltip(reglageZone.nom, { permanent: true, direction: 'right', className: 'lbl-zone' }).addTo(calqueZone);
+  const g = await chargerZone();
+  if (!reglageZone.voir) return;
+  if (!g) return toast('Zone indisponible : le service de l’IGN ne répond pas.');
+  const forme = L.geoJSON(g, { style: { color: '#1f4577', weight: 2.5, dashArray: '8 6', fillColor: '#63a044', fillOpacity: .07 }, interactive: false }).addTo(calqueZone);
+  if (cadrer) carte.fitBounds(forme.getBounds(), { padding: [30, 30] });
+}
+$('#b-zone').onclick = () => {
+  reglageZone.voir = !reglageZone.voir; garderZone(); dessinerZone(reglageZone.voir);
+  if (reglageZone.voir) toast(`Zone ${dureeTxt(reglageZone.minutes)} de route autour de ${reglageZone.nom}`);
+};
+function feuilleZone() {
+  let delai, choix = null;
+  ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Zone de chalandise</h2>${BTN_FERMER}</div>
+    <p class="sous">La zone atteignable en ${dureeTxt(reglageZone.minutes)} de voiture depuis ${esc(reglageZone.nom)}, calculée par l’IGN.</p>
+    <div class="pile">
+      <label class="champ">Vérifier un lieu<input id="z-q" type="search" placeholder="Ville, village ou adresse…" autocomplete="off"></label>
+      <ul class="resultats" id="z-res"></ul>
+      <div id="z-verdict"></div>
+      <div class="ligne-btns"><button class="b2 plein" id="z-voir">${reglageZone.voir ? 'Masquer la zone' : 'Afficher la zone sur la carte'}</button></div>
+      <h3>Réglages</h3>
+      <div class="champ" style="gap:8px">Temps de route<div class="puces">${DUREES_ZONE.map(m => `<button class="puce" data-zm="${m}" aria-pressed="${m === reglageZone.minutes}">${dureeTxt(m)}</button>`).join('')}</div></div>
+      <label class="champ">Point de départ<input id="z-dep" value="${esc(reglageZone.nom)}" placeholder="ex. adresse de l’entreprise" autocomplete="off"></label>
+      <ul class="resultats" id="z-dep-res"></ul>
+      <div class="ligne-btns"><button class="b2" id="z-ici">Ma position actuelle</button><button class="b2" id="z-chalons">Centre de Châlons</button></div>
+    </div>`, f => {
+    const q = f.querySelector('#z-q'), res = f.querySelector('#z-res'), verdict = f.querySelector('#z-verdict');
+    const verifier = async a => {
+      res.innerHTML = ''; q.value = a.label;
+      verdict.innerHTML = `<div class="carte-suivi"><span class="suivi-titre">${esc(a.label)}</span>${ligneZone(a.lat, a.lng)}</div>`;
+      await chargerZone(); remplirZone(verdict);
+      reglageZone.voir = true; garderZone(); await dessinerZone(false);
+      L.marker([a.lat, a.lng]).bindTooltip(a.label.replace(/\s+\d{5}\s.*$/, ''), { permanent: true, direction: 'top', offset: [-15, -12] }).addTo(calqueZone);
+      const t = await trajet(a.lat, a.lng);
+      if (t && t.coords) L.polyline(t.coords, { color: '#1565c0', weight: 4, opacity: .85 }).addTo(calqueZone);
+      carte.fitBounds(L.latLngBounds([[reglageZone.lat, reglageZone.lng], [a.lat, a.lng]]).pad(.3), { paddingBottomRight: [0, 320] });
+    };
+    const recherche = (champ, liste, quoi) => {
+      champ.oninput = () => {
+        clearTimeout(delai);
+        const t = champ.value.trim(); if (t.length < 3) { liste.innerHTML = ''; return; }
+        delai = setTimeout(async () => {
+          let l = []; try { l = await rechercherAdresse(t); } catch (e) {}
+          liste.innerHTML = l.slice(0, 5).map((a, i) => `<li><button data-i="${i}">${esc(a.label)}</button></li>`).join('');
+          liste.querySelectorAll('[data-i]').forEach(b => b.onclick = () => quoi(l[+b.dataset.i]));
+        }, 350);
+      };
+    };
+    const changerDepart = (lat, lng, nom) => {
+      Object.assign(reglageZone, { lat, lng, nom }); garderZone(); zoneGeo = null;
+      if (reglageZone.voir) dessinerZone(true);
+      toast(`Point de départ : ${nom}`); feuilleZone();
+    };
+    recherche(q, res, verifier);
+    recherche(f.querySelector('#z-dep'), f.querySelector('#z-dep-res'), a => changerDepart(a.lat, a.lng, a.label.replace(/\s+\d{5}\s/, ', ')));
+    f.querySelector('#z-voir').onclick = () => { $('#b-zone').onclick(); feuilleZone(); };
+    f.querySelectorAll('[data-zm]').forEach(b => b.onclick = () => { reglageZone.minutes = +b.dataset.zm; garderZone(); zoneGeo = null; if (reglageZone.voir) dessinerZone(true); feuilleZone(); });
+    f.querySelector('#z-ici').onclick = async () => { const p = await positionFraiche(); if (!p) return toast('Pas de position GPS.'); changerDepart(p.lat, p.lng, 'Ma position'); };
+    f.querySelector('#z-chalons').onclick = () => changerDepart(48.9566, 4.3631, 'Centre de Châlons');
+  });
+}
 carte.on('click', e => {
   if (voirSecteurs) return toast('Mode secteurs : touche une rue colorée, ou ferme-le avec son bouton à droite');
   nouvellePorteA(e.latlng.lat, e.latlng.lng, 'carte');
@@ -2292,6 +2446,9 @@ $('#b-menu').onclick = () => {
       <h3 id="t-bilan">Bilan</h3>
       <div id="bilan" class="bilan"></div>
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
+      <h3>Zone de chalandise</h3>
+      <p class="sous" style="margin:0">${dureeTxt(reglageZone.minutes)} de route depuis ${esc(reglageZone.nom)}. Vérifie si une ville est dans la zone, ou change le point de départ et le temps.</p>
+      <div class="ligne-btns"><button class="b2 plein" id="b-zone-ouvrir">Vérifier un lieu, régler la zone</button></div>
       <h3>Salons</h3>
       <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2 plein" id="b-salon">Démarrer un salon</button>'}</div>
       ${salons().filter(x => x.id !== salonEnCours).length ? `<ul class="liste">${salons().filter(x => x.id !== salonEnCours).sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 6).map(x => `<li><button data-salon="${x.id}"><span class="txt"><span class="a">${esc(x.nom)}</span><span class="m">${esc(new Date(x.debut).toLocaleDateString('fr-FR'))} · ${pl(prospectsSalon(x.id).length, 'prospect')}</span></span></button></li>`).join('')}</ul>` : ''}
@@ -2334,6 +2491,7 @@ $('#b-menu').onclick = () => {
     if (syOff) syOff.onclick = () => { Object.assign(synchro, { url: '', code: '', etag: '', envoye: '', erreur: '', dernier: '' }); garderSynchro(); toast('Synchro désactivée sur cet appareil'); $('#b-menu').onclick(); };
     f.querySelector('#i-mail').onchange = e => { etat.email = e.target.value.trim(); sauver(); toast('Adresse mail enregistrée'); };
     const bsa = f.querySelector('#b-salon'); if (bsa) bsa.onclick = feuilleSalon;
+    f.querySelector('#b-zone-ouvrir').onclick = feuilleZone;
     const bsr = f.querySelector('#b-salon-recap'); if (bsr) bsr.onclick = () => feuilleRecapSalon(salonEnCours);
     f.querySelectorAll('.pile > .liste [data-salon]').forEach(b => b.onclick = () => feuilleRecapSalon(b.dataset.salon));
     f.querySelector('#b-besoins-ok').onclick = () => {
@@ -2432,6 +2590,7 @@ function fusionner(src) {
 dessiner();
 if (salonEnCours && !salonDe(salonEnCours)) salonEnCours = null;
 planifierSynchro(1500);
+if (reglageZone.voir) dessinerZone(false);
 majModeSalon();
 // Ménage : photos prises pour une porte jamais enregistrée (liste figée au démarrage, avant toute nouvelle photo)
 photosDB.cles().then(cles => {
