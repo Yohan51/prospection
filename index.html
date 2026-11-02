@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Carte de prospection</title>
 <meta name="description" content="Portes frappées autour des chantiers : absents à repasser, R1 pris, refus.">
-<meta name="theme-color" content="#1d2730">
+<meta name="theme-color" content="#1f4577">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -20,33 +20,38 @@
 <style>
 /* Carte plein écran ; barre du haut et barre d'actions flottantes ; une feuille qui monte du bas. */
 :root {
-  --ardoise: #1d2730;      /* texte, barres */
-  --ardoise-2: #3a4855;
-  --fond: #f4f6f7;          /* feuilles */
+  /* Couleurs Sublime Toit : bleu marine et vert */
+  --marine: #1f4577;
+  --marine-fonce: #1a3c68;
+  --vert: #63a044;          /* vert de la marque (accents, repères) */
+  --jaune: #f2c230;         /* « à refaire », cible sur la vue aérienne */
+  --ardoise: #183558;       /* texte, barres, boutons foncés : marine profond */
+  --ardoise-2: #34557f;
+  --fond: #f2f5f9;          /* feuilles */
   --surface: #ffffff;
-  --trait: #d5dbe0;
-  --doux: #5d6b77;          /* texte secondaire */
-  --signal: #f2c230;        /* jaune gilet de chantier : l'action principale */
-  --signal-encre: #1d2730;
+  --trait: #d5dfeb;
+  --doux: #586a82;          /* texte secondaire */
+  --signal: #4e8f33;        /* vert Sublime Toit, un ton plus soutenu pour le texte blanc */
+  --signal-encre: #ffffff;
   --st-absent: #e8892b;
   --st-rappel: #2f7ad6;
   --st-r1: #2e9a5a;
   --st-refus: #8a95a0;
   --st-stop: #b23a3a;
-  --ombre: 0 6px 24px rgba(17, 25, 33, .18);
+  --ombre: 0 6px 24px rgba(16, 38, 70, .2);
   --f-titre: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --f-texte: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ardoise: #e9eef2; --ardoise-2: #c3ccd4; --fond: #151c22; --surface: #1d262e; --trait: #33404b;
-    --doux: #9aa7b2; --signal-encre: #151c22; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
+    --ardoise: #e8eef6; --ardoise-2: #c2cfe0; --fond: #0f1c2e; --surface: #17283f; --trait: #2b3f5a;
+    --doux: #9db0c8; --signal: #5a9b3c; --signal-encre: #ffffff; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --ardoise: #e9eef2; --ardoise-2: #c3ccd4; --fond: #151c22; --surface: #1d262e; --trait: #33404b;
-  --doux: #9aa7b2; --signal-encre: #151c22; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
+  --ardoise: #e8eef6; --ardoise-2: #c2cfe0; --fond: #0f1c2e; --surface: #17283f; --trait: #2b3f5a;
+  --doux: #9db0c8; --signal: #5a9b3c; --signal-encre: #ffffff; --ombre: 0 6px 24px rgba(0,0,0,.5); color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -69,7 +74,8 @@ button { cursor: pointer; }
   flex: 1; min-width: 0; background: var(--surface); border-radius: 12px; box-shadow: var(--ombre);
   padding: 8px 12px; display: flex; flex-direction: column;
 }
-.compteur .t { font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--doux); }
+.compteur .t { font: 600 13px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: #b9dfa4; }
+.compteur { background: linear-gradient(135deg, #234e86, var(--marine-fonce)); color: #fff; }
 .compteur .v { font: 600 17px/1.25 var(--f-texte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .rond {
   width: 46px; height: 46px; border-radius: 12px; border: 0; background: var(--surface); box-shadow: var(--ombre);
@@ -183,13 +189,13 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .alerte { color: var(--st-absent); font-weight: 600; font-size: 14px; }
 .b2.vert { background: var(--st-r1); color: #fff; border-color: var(--st-r1); }
 .lien { border: 0; background: none; padding: 0; color: var(--doux); font-size: 14px; text-decoration: underline; align-self: flex-start; }
-.m-porte.signe { background: #17663a; border-color: var(--signal); }
+.m-porte.signe { background: #17663a; border-color: var(--jaune); }
 .menu-btn { position: relative; }
 .menu-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--st-stop); }
 
 /* Préparer le R1 */
 .vue-toit { height: 210px; border-radius: 12px; overflow: hidden; background: #3a4855; }
-.cible-toit { stroke: var(--signal); stroke-width: 3; fill: none; }
+.cible-toit { stroke: var(--jaune); stroke-width: 3; fill: none; }
 
 /* Mode salon */
 .bandeau-salon { position: fixed; z-index: 500; top: calc(env(safe-area-inset-top, 0px) + 66px); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
@@ -236,7 +242,7 @@ textarea { font: inherit; }
 .s-r1 { stroke: var(--st-r1); fill: var(--st-r1); }
 .s-rappel { stroke: var(--st-rappel); fill: var(--st-rappel); }
 .s-rien { stroke: var(--st-refus); fill: var(--st-refus); }
-.s-refaire { stroke: var(--signal); fill: var(--signal); stroke-opacity: .9; fill-opacity: .8; }
+.s-refaire { stroke: var(--jaune); fill: var(--jaune); stroke-opacity: .9; fill-opacity: .8; }
 .secteur.terminee { stroke-dasharray: 1 24; stroke-opacity: .85; }
 .legende-secteurs {
   position: fixed; z-index: 450; left: max(12px, env(safe-area-inset-left, 0px)); right: calc(max(12px, env(safe-area-inset-right, 0px)) + 58px);
@@ -259,7 +265,7 @@ body.secteurs .leaflet-marker-icon { pointer-events: none; }
 .visionneuse img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
 .v-barre { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(12px, env(safe-area-inset-left, 0px)); color: #fff; }
 .v-barre span { flex: 1 1 100%; font-size: 14px; color: #cfd6dc; }
-.v-barre button { border: 1px solid #44515c; background: #1d2730; color: #fff; border-radius: 10px; padding: 10px 14px; font: 600 16px/1 var(--f-titre); }
+.v-barre button { border: 1px solid #3a5577; background: #183558; color: #fff; border-radius: 10px; padding: 10px 14px; font: 600 16px/1 var(--f-titre); }
 .v-barre button.danger { color: #ff8a80; }
 .v-barre button.danger.plein { background: var(--st-stop); color: #fff; }
 
@@ -308,7 +314,7 @@ body.secteurs .leaflet-marker-icon { pointer-events: none; }
   max-width: calc(100% - 32px); box-shadow: var(--ombre); transition: opacity .2s, transform .2s; pointer-events: none;
 }
 .toast.vu { opacity: 1; transform: translate(-50%, 0); }
-.toast button { pointer-events: auto; margin-left: 10px; border: 0; background: none; color: var(--signal); font-weight: 700; padding: 0; }
+.toast button { pointer-events: auto; margin-left: 10px; border: 0; background: none; color: #b9dfa4; font-weight: 700; padding: 0; }
 
 /* Marqueurs */
 .m-porte { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
@@ -318,10 +324,10 @@ body.secteurs .leaflet-marker-icon { pointer-events: none; }
 @keyframes pulse { to { transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .m-porte.temp { animation: none; } }
 .m-chantier { display: flex; align-items: center; gap: 6px; }
-.m-chantier .toit { width: 34px; height: 34px; border-radius: 9px; background: var(--signal); border: 2px solid #1d2730; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.35); flex: none; }
+.m-chantier .toit { width: 34px; height: 34px; border-radius: 9px; background: var(--vert); border: 2px solid #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.35); flex: none; }
 .m-chantier .toit svg { width: 20px; height: 20px; }
-.m-chantier .nom { background: #1d2730; color: #fff; font: 600 13px/1 var(--f-titre); letter-spacing: .03em; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
-.zone { stroke: #1d2730; stroke-dasharray: 6 6; stroke-width: 2; fill: #f2c230; fill-opacity: .08; }
+.m-chantier .nom { background: var(--marine); color: #fff; font: 600 13px/1 var(--f-titre); letter-spacing: .03em; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
+.zone { stroke: #1f4577; stroke-dasharray: 6 6; stroke-width: 2; fill: #63a044; fill-opacity: .1; }
 .moi-point { fill: #2f7ad6; stroke: #fff; stroke-width: 3; }
 .moi-precision { fill: #2f7ad6; fill-opacity: .12; stroke: #2f7ad6; stroke-opacity: .4; stroke-width: 1; }
 .leaflet-container { font-family: var(--f-texte); }
@@ -402,7 +408,7 @@ body.en-tournee .actions, body.en-tournee .aide-carte { display: none; }
 <div class="legende-secteurs" id="legende-secteurs" hidden><b>Secteurs · touche une rue</b>
   <span><i class="s-leg" style="background:#17663a"></i>Signé</span><span><i style="background:var(--st-r1)"></i>R1</span>
   <span><i style="background:var(--st-rappel)"></i>Intéressés</span><span><i style="background:var(--st-refus)"></i>Rien</span>
-  <span><i style="background:var(--signal)"></i>À refaire</span><span>· · · terminée</span></div>
+  <span><i style="background:var(--jaune)"></i>À refaire</span><span>· · · terminée</span></div>
 <div class="aide-carte" id="aide" hidden>Touche la carte devant une maison pour noter la porte, ou utilise <b>Porte ici</b> quand tu es devant.</div>
 
 <div class="actions">
@@ -553,7 +559,7 @@ $('#b-couche').onclick = () => {
 const calqueZones = L.layerGroup().addTo(carte);
 const calquePortes = L.layerGroup().addTo(carte);
 const calqueChantiers = L.layerGroup().addTo(carte);
-const ICONE_TOIT = '<svg viewBox="0 0 24 24" fill="none" stroke="#1d2730" stroke-width="2.4" stroke-linejoin="round"><path d="M3 12 12 4l9 8"/><path d="M6 11v9h12v-9"/></svg>';
+const ICONE_TOIT = '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"><path d="M3 12 12 4l9 8"/><path d="M6 11v9h12v-9"/></svg>';
 
 function iconePorte(p) {
   const autre = p.auteur && etat.moi && cleAdresse(p.auteur) !== cleAdresse(etat.moi);
