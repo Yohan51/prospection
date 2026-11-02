@@ -216,6 +216,14 @@ body.en-salon #b-ici { font-size: 17px; line-height: 1.05; }
 .coche.consent { background: var(--surface); border-radius: 10px; }
 textarea { font: inherit; }
 
+/* Menu en onglets */
+.onglets { position: sticky; top: -8px; z-index: 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 12px 0 0; padding: 4px;
+  background: var(--trait); border-radius: 12px; }
+.onglets button { border: 0; border-radius: 9px; padding: 9px 4px; background: none; color: var(--ardoise-2); font: 600 16px/1.1 var(--f-titre); letter-spacing: .02em;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.onglets button[aria-selected="true"] { background: var(--surface); color: var(--ardoise); box-shadow: 0 1px 4px rgba(16, 38, 70, .15); }
+.onglets .badge { background: var(--st-stop); font-size: 12px; line-height: 16px; min-width: 18px; }
+
 /* Fiche porte : bloc Détails repliable */
 .details { background: var(--surface); border-radius: 12px; }
 .details > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 13px 12px; cursor: pointer; font: 600 17px/1.1 var(--f-titre); }
@@ -2457,47 +2465,66 @@ function listesMenu() {
   if (ref.length) h += `<h3>Rues à refaire</h3><ul class="liste">${ref.map(g => `<li><button data-rue="${esc(g.cle)}">${rond('absent')}<span class="txt"><span class="a">${esc(g.rue)}</span><span class="m">${esc(g.ville)} · faite le ${esc(new Date(etatRue(g.cle).terminee).toLocaleDateString('fr-FR'))}</span></span></button></li>`).join('')}</ul>`;
   return h;
 }
-$('#b-jour').onclick = () => { $('#b-menu').onclick(); const b = $('#t-bilan'); if (b) $('#feuille').scrollTop = b.offsetTop - 10; };
-$('#b-menu').onclick = () => {
-  const ps = portes(), tot = k => ps.filter(p => p.statut === k).length;
+$('#b-jour').onclick = () => $('#b-menu').onclick('bilan');
+const ONGLETS = { jour: 'Aujourd’hui', bilan: 'Bilan', reglages: 'Réglages' };
+let ongletMenu = 'jour';
+try { ongletMenu = localStorage.getItem(CLE + ':onglet') || 'jour'; } catch (e) {}
+$('#b-menu').onclick = (demande) => {
+  // Un onglet précis demandé, sinon le dernier utilisé ; les rappels en retard ramènent sur « Aujourd'hui »
+  if (typeof demande === 'string') ongletMenu = demande;
+  else if (rappelsDus().length) ongletMenu = 'jour';
+  if (!ONGLETS[ongletMenu]) ongletMenu = 'jour';
   const archives = chantiers(true).filter(c => c.archive);
   const derniere = etat.dernierExport ? quand(etat.dernierExport) : 'jamais';
+  const listes = listesMenu(), dus = rappelsDus().length;
+  const anciensSalons = salons().filter(x => x.id !== salonEnCours).sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 8);
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Prospection</h2>${BTN_FERMER}</div>
-    <div class="pile">
-      ${listesMenu()}
-      <h3 id="t-bilan">Bilan</h3>
+    <div class="onglets" role="tablist">${Object.entries(ONGLETS).map(([k, t]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === ongletMenu}">${t}${k === 'jour' && dus ? ` <span class="badge">${dus}</span>` : ''}</button>`).join('')}</div>
+
+    <div class="pile" data-panneau="jour"${ongletMenu === 'jour' ? '' : ' hidden'}>
+      ${listes || '<p class="vide">Rien d’urgent : aucun rappel, rendez-vous ou projet en attente. Bonne prospection !</p>'}
+      ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const st = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${st.total} porte${st.total > 1 ? 's' : ''} · ${st.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
+      <h3>Outils</h3>
+      <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2" id="b-salon">Démarrer un salon</button>'}<button class="b2" id="b-zone-ouvrir">Zone de chalandise</button></div>
+    </div>
+
+    <div class="pile" data-panneau="bilan"${ongletMenu === 'bilan' ? '' : ' hidden'}>
       <div id="bilan" class="bilan"></div>
+      ${anciensSalons.length ? `<h3>Salons</h3><ul class="liste">${anciensSalons.map(x => `<li><button data-salon="${x.id}"><span class="txt"><span class="a">${esc(x.nom)}</span><span class="m">${esc(new Date(x.debut).toLocaleDateString('fr-FR'))} · ${pl(prospectsSalon(x.id).length, 'prospect')}</span></span></button></li>`).join('')}</ul>` : ''}
+      ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
+    </div>
+
+    <div class="pile" data-panneau="reglages"${ongletMenu === 'reglages' ? '' : ' hidden'}>
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
-      <h3>Zone de chalandise</h3>
-      <p class="sous" style="margin:0">${dureeTxt(reglageZone.minutes)} de route depuis ${esc(reglageZone.nom)}. Vérifie si une ville est dans la zone, ou change le point de départ et le temps.</p>
-      <div class="ligne-btns"><button class="b2 plein" id="b-zone-ouvrir">Vérifier un lieu, régler la zone</button></div>
-      <h3>Salons</h3>
-      <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2 plein" id="b-salon">Démarrer un salon</button>'}</div>
-      ${salons().filter(x => x.id !== salonEnCours).length ? `<ul class="liste">${salons().filter(x => x.id !== salonEnCours).sort((a, b) => a.debut < b.debut ? 1 : -1).slice(0, 6).map(x => `<li><button data-salon="${x.id}"><span class="txt"><span class="a">${esc(x.nom)}</span><span class="m">${esc(new Date(x.debut).toLocaleDateString('fr-FR'))} · ${pl(prospectsSalon(x.id).length, 'prospect')}</span></span></button></li>`).join('')}</ul>` : ''}
       <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
       <h3>Synchronisation avec le Pi</h3>
       <p class="sous" style="margin:0" id="etat-synchro">${esc(texteEtatSynchro())}</p>
       <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
       <label class="champ">Code d’équipe<input id="sy-code" type="password" value="${esc(synchro.code)}" placeholder="le même sur tous vos appareils" autocomplete="off" autocapitalize="off"></label>
       <div class="ligne-btns"><button class="b2 plein" id="sy-ok">${synchroActive() ? 'Synchroniser maintenant' : 'Tester et activer'}</button>${synchroActive() ? '<button class="b2" id="sy-off">Désactiver</button>' : ''}</div>
-      <h3>Partager avec ton collègue</h3>
-      <p class="sous" style="margin:0">Envoie-lui ton fichier (AirDrop, Messages…), il l'importe : vos portes sont fusionnées, sans doublon. Il fait pareil dans l'autre sens. Ses portes ont un contour en pointillés.</p>
-      <div class="ligne-btns"><button class="b2 plein" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
-      <p class="sous" style="margin:0">Dernier envoi : ${esc(derniere)}. C'est aussi ta sauvegarde : fais-le au moins une fois par semaine.</p>
-      ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const s = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${s.total} porte${s.total > 1 ? 's' : ''} · ${s.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
-      ${archives.length ? `<h3>Chantiers terminés</h3><ul class="liste">${archives.map(c => `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${esc(c.adresse)}</span></span></button></li>`).join('')}</ul>` : ''}
-      <h3>Calendrier de l'iPhone</h3>
-      <p class="sous" style="margin:0">Les R1, R2 et rappels passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : le rendez-vous s'inscrit tout seul dans le Calendrier. Ne renomme pas le raccourci, sinon la carte ne le trouve plus.</p>
+      <h3>Zone de chalandise</h3>
+      <p class="sous" style="margin:0">${dureeTxt(reglageZone.minutes)} de route depuis ${esc(reglageZone.nom)}.</p>
+      <div class="ligne-btns"><button class="b2" id="b-zone-regler">Régler la zone</button></div>
       <h3>Liste des besoins</h3>
       <label class="champ">Un besoin par ligne<textarea id="i-besoins" rows="6">${esc(listeBesoins().join('\n'))}</textarea></label>
       <div class="ligne-btns"><button class="b2" id="b-besoins-ok">Enregistrer la liste</button><button class="b2" id="b-besoins-defaut">Liste d’origine</button></div>
-      <h3>Photos</h3>
-      <p class="sous" style="margin:0">Les photos restent sur ce téléphone : elles ne partent pas avec « Envoyer mes portes ». Pour en transmettre une, ouvre-la et touche « Partager ».</p>
+      <h3>Partager par fichier</h3>
+      <p class="sous" style="margin:0">Sans la synchro : envoie ton fichier (AirDrop, Messages…), l’autre l’importe et vos portes sont fusionnées, sans doublon. Dernier envoi : ${esc(derniere)}.</p>
+      <div class="ligne-btns"><button class="b2" id="b-export">Envoyer mes portes</button><button class="b2" id="b-import">Importer un fichier</button></div>
+      <h3>Bon à savoir</h3>
+      <p class="sous" style="margin:0">Les R1, R2 et rappels passent par le raccourci « ${NOM_RACCOURCI} » de l'appli Raccourcis : ne le renomme pas. Les photos voyagent avec la synchro, mais pas avec « Envoyer mes portes ».</p>
       <h3>Légende</h3>
-      <ul class="histo">${Object.entries(STATUTS).map(([k, s]) => `<li><span class="pastille ${k}"></span><span>${esc(s.nom)}${s.aide ? ` <span class="quand">· ${esc(s.aide)}</span>` : ''}</span></li>`).join('')}</ul>
+      <ul class="histo">${Object.entries(STATUTS).map(([k, st]) => `<li><span class="pastille ${k}"></span><span>${esc(st.nom)}${st.aide ? ` <span class="quand">· ${esc(st.aide)}</span>` : ''}</span></li>`).join('')}</ul>
       <div class="ligne-btns"><button class="b2 danger" id="b-raz">Tout effacer</button></div>
     </div>`, f => {
     afficherBilan(f.querySelector('#bilan'));
+    f.querySelectorAll('[data-onglet]').forEach(b => b.onclick = () => {
+      ongletMenu = b.dataset.onglet; try { localStorage.setItem(CLE + ':onglet', ongletMenu); } catch (e) {}
+      f.querySelectorAll('[data-onglet]').forEach(x => x.setAttribute('aria-selected', x === b));
+      f.querySelectorAll('[data-panneau]').forEach(x => x.hidden = x.dataset.panneau !== ongletMenu);
+      $('#feuille').scrollTop = 0;
+    });
+    f.querySelector('#b-zone-regler').onclick = feuilleZone;
     f.querySelector('#i-moi').onchange = e => { etat.moi = e.target.value.trim(); sauver(); dessiner(); toast('Prénom enregistré'); };
     f.querySelector('#b-export').onclick = exporter;
     f.querySelector('#sy-ok').onclick = async () => {
