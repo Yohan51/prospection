@@ -199,6 +199,14 @@ h3 { margin: 6px 0 0; font: 600 14px/1 var(--f-titre); letter-spacing: .08em; te
 .zone-info.dehors { color: var(--st-stop); font-weight: 600; }
 .lbl-zone { background: var(--marine); color: #fff; border: 0; border-radius: 6px; font: 600 13px/1 var(--f-titre); padding: 4px 7px; box-shadow: none; }
 .lbl-zone:before { display: none; }
+.lbl-ville { background: rgba(255,255,255,.92); color: #1b2a3a; border: 1.5px solid #3f7d24; border-radius: 5px; font: 700 12px/1 var(--f-titre); padding: 3px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.lbl-ville.dehors { border-color: #d62828; }
+.lbl-ville:before { display: none; }
+.liste-villes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.liste-villes li { display: grid; grid-template-columns: 14px 1fr; column-gap: 8px; align-items: center; }
+.liste-villes small { grid-column: 2; color: var(--doux); font-size: 13px; }
+.pastille-ville { width: 10px; height: 10px; border-radius: 50%; background: #3f7d24; }
+.pastille-ville.dehors { background: #d62828; }
 
 /* Préparer le R1 */
 .vue-toit { height: 210px; border-radius: 12px; overflow: hidden; background: #3a4855; }
@@ -1953,6 +1961,67 @@ async function remplirZone(racine) {
     el.textContent = `${ok ? '✅ Dans la zone' : '❌ Hors zone'} ${dureeTxt(reglageZone.minutes)} · ${dureeTxt(t.min)} de route (${String(t.km).replace('.', ',')} km)`;
   }
 }
+/* Grandes villes proches de la limite de la zone (données INSEE via geo.api.gouv.fr) */
+const VILLES_POP_MIN = 5000, VILLES_BANDE_KM = 12, VILLES_MAX = 14;
+let villesZone = null, villesCle = '';
+function anneauxZone() {
+  const polys = zoneGeo.type === 'MultiPolygon' ? zoneGeo.coordinates : [zoneGeo.coordinates];
+  return polys.flat();
+}
+function kmDeLaLimite(lat, lng) {   // distance en km au contour le plus proche
+  const kx = 111.32 * Math.cos(lat * Math.PI / 180), ky = 110.57;
+  let min = Infinity;
+  for (const a of anneauxZone()) for (let i = 1; i < a.length; i++) {
+    const ax = (a[i - 1][0] - lng) * kx, ay = (a[i - 1][1] - lat) * ky, bx = (a[i][0] - lng) * kx, by = (a[i][1] - lat) * ky;
+    const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+    const t = l ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l)) : 0;
+    min = Math.min(min, Math.hypot(ax + t * dx, ay + t * dy));
+  }
+  return min;
+}
+let villesEnCours = null;
+function chargerVilles() {   // une seule recherche à la fois par zone
+  const k = cleZone();
+  if (villesZone && villesCle === k) return Promise.resolve(villesZone);
+  if (villesEnCours && villesEnCours.k === k) return villesEnCours.p;
+  const p = chercherVilles(k).finally(() => { if (villesEnCours && villesEnCours.p === p) villesEnCours = null; });
+  villesEnCours = { k, p };
+  return p;
+}
+async function chercherVilles(k) {
+  try { const c = JSON.parse(localStorage.getItem(CLE_Z + ':villes')); if (c && c.k === k && Date.now() - c.t < 90 * 864e5) { villesCle = k; return villesZone = c.villes; } } catch (e) {}
+  if (!(await chargerZone())) return null;
+  // 1. les départements que traverse la limite (quelques points pris le long du contour)
+  const pts = [[reglageZone.lng, reglageZone.lat]];
+  for (const a of anneauxZone()) { const pas = Math.max(1, Math.ceil(a.length / 24)); for (let i = 0; i < a.length; i += pas) pts.push(a[i]); }
+  const deps = new Set();
+  await Promise.all(pts.slice(0, 30).map(async ([x, y]) => {
+    try { const r = await geo(`https://geo.api.gouv.fr/communes?lat=${y}&lon=${x}&fields=codeDepartement&format=json`, 12000); if (r[0]) deps.add(r[0].codeDepartement); } catch (e) {}
+  }));
+  if (!deps.size) return null;
+  // 2. leurs communes peuplées, gardées si elles sont près de la limite
+  const villes = [];
+  await Promise.all([...deps].map(async d => {
+    try {
+      const r = await geo(`https://geo.api.gouv.fr/departements/${d}/communes?fields=nom,population,centre&format=json`, 20000);
+      for (const c of r) {
+        if (!(c.population >= VILLES_POP_MIN) || !c.centre) continue;
+        const [lng, lat] = c.centre.coordinates, km = kmDeLaLimite(lat, lng);
+        if (km <= VILLES_BANDE_KM) villes.push({ nom: c.nom, pop: c.population, lat, lng, km: Math.round(km), dedans: dansZone(lat, lng) });
+      }
+    } catch (e) {}
+  }));
+  const vus = new Set(); villes.sort((a, b) => b.pop - a.pop);
+  villes.splice(0, villes.length, ...villes.filter(v => { const c = v.nom + v.lat.toFixed(3); return !vus.has(c) && vus.add(c); }).slice(0, VILLES_MAX));
+  villesZone = villes; villesCle = k;
+  try { localStorage.setItem(CLE_Z + ':villes', JSON.stringify({ k, t: Date.now(), villes })); } catch (e) {}
+  return villes;
+}
+function listeVillesHTML(v) {
+  if (!v) return '<p class="sous">Villes en bordure indisponibles pour le moment (réseau).</p>';
+  if (!v.length) return `<p class="sous">Aucune ville de plus de ${VILLES_POP_MIN.toLocaleString('fr-FR')} habitants près de la limite.</p>`;
+  return `<ul class="liste-villes">${v.map(c => `<li><span class="pastille-ville ${c.dedans ? 'dedans' : 'dehors'}"></span><b>${esc(c.nom)}</b><small>${c.pop.toLocaleString('fr-FR')} hab. · ${c.dedans ? 'dans la zone' : 'hors zone'} · ${c.km ? `à ${c.km} km de la limite` : 'sur la limite'}</small></li>`).join('')}</ul>`;
+}
 async function dessinerZone(cadrer) {
   calqueZone.clearLayers();
   $('#b-zone').classList.toggle('actif', reglageZone.voir);
@@ -1963,8 +2032,16 @@ async function dessinerZone(cadrer) {
   const g = await chargerZone();
   if (!reglageZone.voir) return;
   if (!g) return toast('Zone indisponible : le service de l’IGN ne répond pas.');
-  const forme = L.geoJSON(g, { style: { color: '#1f4577', weight: 2.5, dashArray: '8 6', fillColor: '#63a044', fillOpacity: .07 }, interactive: false }).addTo(calqueZone);
+  // limite en rouge, posée sur un liseré blanc pour rester lisible sur la vue satellite
+  L.geoJSON(g, { style: { color: '#fff', weight: 7, opacity: .85, fill: false }, interactive: false }).addTo(calqueZone);
+  const forme = L.geoJSON(g, { style: { color: '#d62828', weight: 3.5, opacity: 1, fillColor: '#63a044', fillOpacity: .06 }, interactive: false }).addTo(calqueZone);
   if (cadrer) carte.fitBounds(forme.getBounds(), { padding: [30, 30] });
+  const villes = await chargerVilles();
+  if (!reglageZone.voir || !villes) return;
+  for (const v of villes) {
+    L.circleMarker([v.lat, v.lng], { radius: 5, color: '#fff', weight: 2, fillColor: v.dedans ? '#3f7d24' : '#d62828', fillOpacity: 1, interactive: false })
+      .bindTooltip(v.nom, { permanent: true, direction: 'right', offset: [6, 0], className: 'lbl-ville' + (v.dedans ? '' : ' dehors') }).addTo(calqueZone);
+  }
 }
 $('#b-zone').onclick = () => {
   reglageZone.voir = !reglageZone.voir; garderZone(); dessinerZone(reglageZone.voir);
@@ -1979,6 +2056,8 @@ function feuilleZone() {
       <ul class="resultats" id="z-res"></ul>
       <div id="z-verdict"></div>
       <div class="ligne-btns"><button class="b2 plein" id="z-voir">${reglageZone.voir ? 'Masquer la zone' : 'Afficher la zone sur la carte'}</button></div>
+      <h3>Villes en bordure de zone</h3>
+      <div id="z-villes"><p class="sous">Recherche des villes proches de la limite…</p></div>
       <h3>Réglages</h3>
       <div class="champ" style="gap:8px">Temps de route<div class="puces">${DUREES_ZONE.map(m => `<button class="puce" data-zm="${m}" aria-pressed="${m === reglageZone.minutes}">${dureeTxt(m)}</button>`).join('')}</div></div>
       <label class="champ">Point de départ<input id="z-dep" value="${esc(reglageZone.nom)}" placeholder="ex. adresse de l’entreprise" autocomplete="off"></label>
@@ -1986,6 +2065,7 @@ function feuilleZone() {
       <div class="ligne-btns"><button class="b2" id="z-ici">Ma position actuelle</button><button class="b2" id="z-chalons">Centre de Châlons</button></div>
     </div>`, f => {
     const q = f.querySelector('#z-q'), res = f.querySelector('#z-res'), verdict = f.querySelector('#z-verdict');
+    chargerVilles().then(v => { const el = f.querySelector('#z-villes'); if (el && el.isConnected) el.innerHTML = listeVillesHTML(v); });
     const verifier = async a => {
       res.innerHTML = ''; q.value = a.label;
       verdict.innerHTML = `<div class="carte-suivi"><span class="suivi-titre">${esc(a.label)}</span>${ligneZone(a.lat, a.lng)}</div>`;
