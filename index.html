@@ -867,6 +867,35 @@ function etatSmsR1(p) {
   if (dateR1(r) < new Date() || !telR1(p)) return '';
   return 'attente';
 }
+/* Envoi automatique : le raccourci « Relais SMS » de l'iPhone pro lit sur le Pi la liste smsAFaire publiée par
+   chaque appareil, saute tout ce qui figure dans smsFaits (envoyé, ignoré, horaire changé, porte supprimée),
+   envoie le reste et renvoie au Pi la liste de ce qu'il a envoyé (état « relais-sms »). */
+function relaisActif() { const r = etat.relaisSms && etat.relaisSms[cleMoi()]; return !!(r && r.actif); }
+function regleRelais(actif) { etat.relaisSms = Object.assign({}, etat.relaisSms, { [cleMoi()]: { actif, maj: maintenant() } }); sauver(); }
+const cleSms = p => `${p.id}|${cleRdvSms(p.r1)}`;
+function smsPourRelais() {
+  return relaisActif() ? smsAEnvoyer().map(p => ({ k: cleSms(p), tel: telR1(p), texte: texteSmsR1(p), rdv: `${p.r1.date} ${p.r1.heure || '18:00'}` })) : [];
+}
+function smsFaitsTexte() {
+  const out = [];
+  for (const p of etat.portes) {
+    if (p.smsR1 && p.smsR1.cle) out.push(`${p.id}|${p.smsR1.cle}`);
+    for (const c of p.smsAnciennes || []) out.push(`${p.id}|${c}`);
+    if (p.r1 && p.r1.date && (p.supprime || etapeDe(p) === 'perdu')) out.push(cleSms(p));
+  }
+  return out.join('\n');
+}
+// Ce que le relais a déjà envoyé : on le note sur les fiches
+function lireRelais(src) {
+  let n = 0;
+  for (const ligne of String(src.envoyes || '').split(/\r?\n/)) {
+    const i = ligne.indexOf('|'); if (i < 1) continue;
+    const id = ligne.slice(0, i).trim(), cle = ligne.slice(i + 1).trim();
+    const p = etat.portes.find(x => x.id === id);
+    if (p && !(p.smsR1 && p.smsR1.cle === cle)) { p.smsR1 = { cle, envoye: maintenant(), maj: maintenant(), par: 'relais' }; n++; }
+  }
+  return n;
+}
 function smsAEnvoyer() { return portes().filter(p => etatSmsR1(p) === 'attente').sort((a, b) => dateR1(a.r1) - dateR1(b.r1)); }
 function envoyerSmsR1(p) {
   const num = telR1(p); if (!num) return toast('Pas de numéro de portable pour ce client.');
@@ -882,6 +911,7 @@ function ligneSmsR1(p) {
   const e = etatSmsR1(p); if (!e) return '';
   if (e === 'envoye') return `<span class="qui">✓ SMS de confirmation envoyé ${esc(quand(p.smsR1.envoye))}</span>`;
   if (e === 'ignore') return '<span class="qui">Pas de SMS de confirmation pour ce R1</span>';
+  if (relaisActif()) return '<span class="qui">SMS de confirmation : envoi automatique par le téléphone pro</span>';
   return estTelPro() ? '' : '<span class="qui">SMS de confirmation : en attente sur le téléphone pro</span>';
 }
 function texteR1(r) {
@@ -920,6 +950,8 @@ function feuilleR1(p, apres) {
     const enregistrer = () => {
       const n = lire();
       if (!n.date) { toast('Choisis la date du R1.'); return null; }
+      const ancienne = p.r1 && p.r1.date ? cleRdvSms(p.r1) : '';
+      if (ancienne && ancienne !== cleRdvSms(n)) p.smsAnciennes = [...new Set([...(p.smsAnciennes || []), ancienne])];
       p.r1 = n; p.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
       return n;
     };
@@ -1865,7 +1897,8 @@ const idAppareil = () => etat.moi ? `${cleAdresse(etat.moi).replace(/ /g, '-').s
 function etatPourEnvoi(avecPhotos) {
   return { app: 'carte-prospection', version: 1, par: etat.moi, appareil: nomAppareil(), exporteLe: maintenant(), chantiers: etat.chantiers,
     portes: avecPhotos ? etat.portes : etat.portes.map(p => Object.assign({}, p, { photos: undefined })),
-    rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '', salons: salons() };
+    rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '', salons: salons(),
+    relaisSms: etat.relaisSms || {}, smsAFaire: smsPourRelais(), smsFaits: smsFaitsTexte() };
 }
 async function appelPi(chemin, opts = {}) {
   const base = synchro.url.replace(/\/+$/, '');
@@ -1908,6 +1941,7 @@ function synchroniser(manuel) {
         }
         synchro.appareils = [...vus.values()];
         for (const a of j.appareils) if (a.etat && a.etat.app === 'carte-prospection') { const x = fusionner(a.etat); recus += x.ajouts + x.majs; }
+        for (const a of j.appareils) if (a.etat && a.etat.app === 'relais-sms') recus += lireRelais(a.etat);
         synchro.etag = r.headers.get('ETag') || '';
         enregistrerLocal(); dessiner(); majModeSalon();
         const sa = salonActif();
@@ -2633,7 +2667,7 @@ function listesMenu() {
   const item = (id, k, a, m, conseil) => `<li><button data-p="${id}">${rond(k)}<span class="txt"><span class="a">${esc(a)}</span><span class="m">${esc(m)}</span>${conseil ? `<span class="conseil">${esc(conseil)}</span>` : ''}</span></button></li>`;
   let h = '';
   const sms = estTelPro() ? smsAEnvoyer() : [];
-  if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(p => `<li><button data-sms="${p.id}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · R1 ${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.tel || telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">Touche pour ouvrir le SMS</span></span></button><button class="lien" data-sms-non="${p.id}">Ne pas envoyer</button></li>`).join('')}</ul>`;
+  if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(p => `<li><button data-sms="${p.id}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · R1 ${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.tel || telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}">Ne pas envoyer</button></li>`).join('')}</ul>`;
   const rap = aRappelerListe();
   if (rap.length) h += `<h3>À rappeler (${rap.length})</h3><ul class="liste">${rap.map(p => {
     const r = p.aRappeler, retard = r && r.date && dateRappel(r) < new Date();
@@ -2686,6 +2720,7 @@ $('#b-menu').onclick = (demande) => {
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
       <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
       <label class="coche"><input type="checkbox" id="i-pro"${estTelPro() ? ' checked' : ''}>C’est mon téléphone pro : les SMS de confirmation des R1 partent d’ici</label>
+      ${estTelPro() ? `<label class="coche"><input type="checkbox" id="i-relais"${relaisActif() ? ' checked' : ''}>Envoi automatique par le raccourci « Relais SMS », même pour les R1 pris sur un autre appareil</label>` : ''}
       <h3>Synchronisation avec le Pi</h3>
       <p class="sous" style="margin:0" id="etat-synchro">${esc(texteEtatSynchro())}</p>
       <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
@@ -2742,6 +2777,8 @@ $('#b-menu').onclick = (demande) => {
       dessiner(); planifierSynchro(500);
       toast(e.target.checked ? 'Téléphone pro : les SMS de confirmation partiront d’ici' : 'Ce téléphone n’envoie plus les SMS');
     };
+    const ir = f.querySelector('#i-relais');
+    if (ir) ir.onchange = e => { regleRelais(e.target.checked); dessiner(); planifierSynchro(500); toast(e.target.checked ? 'Envoi automatique activé' : 'Envoi automatique désactivé'); };
     f.querySelector('#i-mail').onchange = e => { etat.email = e.target.value.trim(); sauver(); toast('Adresse mail enregistrée'); };
     const bsa = f.querySelector('#b-salon'); if (bsa) bsa.onclick = feuilleSalon;
     f.querySelector('#b-zone-ouvrir').onclick = feuilleZone;
@@ -2826,6 +2863,7 @@ function fusionner(src) {
     for (const k of ['prepR1', 'prepR2']) if (p[k] && (!loc[k] || (p[k].maj || '') > (loc[k].maj || ''))) loc[k] = p[k];
     if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
     if (p.smsR1 && (!loc.smsR1 || (p.smsR1.maj || '') > (loc.smsR1.maj || ''))) loc.smsR1 = p.smsR1;
+    if (p.smsAnciennes) loc.smsAnciennes = [...new Set([...(loc.smsAnciennes || []), ...p.smsAnciennes])];
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
     const vusE = new Set((loc.suivi || []).map(cleE));
@@ -2833,6 +2871,10 @@ function fusionner(src) {
     if (loc.suivi) loc.suivi.sort((a, b) => a.date < b.date ? -1 : 1);
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi || photosChangees) majs++;
+  }
+  for (const [k, r] of Object.entries(src.relaisSms || {})) {
+    const l = etat.relaisSms && etat.relaisSms[k];
+    if (!l || (r.maj || '') > (l.maj || '')) etat.relaisSms = Object.assign({}, etat.relaisSms, { [k]: r });
   }
   if ((src.besoinsListeMaj || '') > (etat.besoinsListeMaj || '')) { etat.besoinsListe = src.besoinsListe; etat.besoinsListeMaj = src.besoinsListeMaj; }
   for (const x of src.salons || []) {
