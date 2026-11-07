@@ -1434,7 +1434,28 @@ let salonEnCours = null;
 try { salonEnCours = localStorage.getItem(CLE_S) || null; } catch (e) {}
 const salons = () => etat.salons || [];
 const salonDe = id => salons().find(s => s.id === id);
-const salonActif = () => (salonEnCours && salonDe(salonEnCours)) || null;
+/* Le salon en cours suit la personne sur tous ses appareils : il est noté dans le salon lui-même (s.presence),
+   qui voyage avec la synchro. Chaque personne a sa propre entrée, datée, pour ne pas écraser celle du collègue. */
+const cleMoi = () => cleAdresse(etat.moi) || '_';
+const presenceDe = s => (s && s.presence && s.presence[cleMoi()]) || null;
+function salonActif() {
+  let mieux = null;
+  for (const s of salons()) { const e = presenceDe(s); if (e && e.actif && (!mieux || e.maj > presenceDe(mieux).maj)) mieux = s; }
+  if (mieux) return mieux;
+  // Ancienne version : salon noté seulement sur cet appareil, tant qu'aucune présence partagée ne dit le contraire
+  const loc = salonEnCours && salonDe(salonEnCours);
+  return loc && !presenceDe(loc) ? loc : null;
+}
+function marquerPresence(id, actif) {
+  const t = maintenant(), k = cleMoi();
+  for (const s of salons()) {
+    const e = presenceDe(s), viser = s.id === id && actif;
+    if (viser || (e && e.actif) || s.id === id) { s.presence = Object.assign({}, s.presence, { [k]: { actif: viser, maj: t } }); s.maj = t; }
+  }
+  sauver();
+}
+// Reprise d'un salon démarré avec l'ancienne version : on le partage avec les autres appareils
+if (salonEnCours && salonDe(salonEnCours) && !presenceDe(salonDe(salonEnCours))) marquerPresence(salonEnCours, true);
 const prospectsSalon = id => portes().filter(p => p.salon && p.salon.id === id).sort((a, b) => a.cree < b.cree ? 1 : -1);
 const PROJETS = ['Dès que possible', 'D’ici 3 mois', 'Dans l’année', 'Se renseigne'];
 const ICONE_PORTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 21V4h11l3 3v14"/><path d="M3 21h18"/><circle cx="14" cy="13" r="1" fill="currentColor"/></svg>';
@@ -1466,12 +1487,14 @@ function feuilleSalon() {
 }
 function entrerSalon(id) {
   salonEnCours = id; try { localStorage.setItem(CLE_S, id); } catch (e) {}
+  marquerPresence(id, true);
   if (tournee) finirTournee();
   fermerFeuille(); majModeSalon();
   toast(`Salon ${salonDe(id).nom} : touche « Nouveau prospect »`);
 }
 function quitterSalon() {
   const s = salonActif(); salonEnCours = null; try { localStorage.removeItem(CLE_S); } catch (e) {}
+  if (s) marquerPresence(s.id, false);
   majModeSalon();
   if (s) toast(`Salon ${s.nom} terminé : ${pl(prospectsSalon(s.id).length, 'prospect')}`);
 }
@@ -1790,7 +1813,12 @@ if (!synchro.appareil) synchro.appareil = uid().replace(/[^A-Za-z0-9_-]/g, '').s
 const garderSynchro = () => { try { localStorage.setItem(CLE_SY, JSON.stringify(synchro)); } catch (e) {} };
 garderSynchro();
 const synchroActive = () => !!(synchro.url && synchro.code);
-const nomAppareil = () => `${/ipad/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad' : /iphone/i.test(navigator.userAgent) ? 'iPhone' : /mac/i.test(navigator.userAgent) ? 'Mac' : 'Appareil'}${etat.moi ? ' de ' + etat.moi : ''}`;
+const typeAppareil = () => /ipad/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad' : /iphone/i.test(navigator.userAgent) ? 'iPhone' : /mac/i.test(navigator.userAgent) ? 'Mac' : 'Appareil';
+const nomAppareil = () => `${typeAppareil()}${etat.moi ? ' de ' + etat.moi : ''}`;
+/* Identifiant envoyé au Pi : tiré du prénom et du type d'appareil (« yohan-iphone »), et non plus tiré au hasard.
+   Il reste donc le même après une réinstallation, un vidage du cache, ou entre Safari et l'icône d'accueil.
+   Sans prénom, on garde l'ancien identifiant au hasard. */
+const idAppareil = () => etat.moi ? `${cleAdresse(etat.moi).replace(/ /g, '-')}-${typeAppareil().toLowerCase()}`.slice(0, 32) : synchro.appareil;
 function etatPourEnvoi(avecPhotos) {
   return { app: 'carte-prospection', version: 1, par: etat.moi, appareil: nomAppareil(), exporteLe: maintenant(), chantiers: etat.chantiers,
     portes: avecPhotos ? etat.portes : etat.portes.map(p => Object.assign({}, p, { photos: undefined })),
@@ -1822,19 +1850,31 @@ function synchroniser(manuel) {
     let recus = 0;
     try {
       // 1. Ce que les autres appareils ont noté
-      const r = await appelPi(`/etats?sauf=${encodeURIComponent(synchro.appareil)}`, { headers: synchro.etag && !manuel ? { 'If-None-Match': synchro.etag } : {} });
+      // On relit aussi ce qui est déjà rangé sous notre identifiant : il peut être partagé
+      // (Safari et icône d'accueil, réinstallation), il ne faut donc pas l'écraser sans l'avoir fusionné.
+      const id = idAppareil();
+      if (synchro.idEnvoi !== id) Object.assign(synchro, { idEnvoi: id, etag: '', envoye: '' });
+      const r = await appelPi('/etats?sauf=-', { headers: synchro.etag && !manuel ? { 'If-None-Match': synchro.etag } : {} });
       if (r.status !== 304) {
-        const j = await r.json();
-        synchro.appareils = j.appareils.map(a => ({ nom: (a.etat && (a.etat.appareil || a.etat.par)) || 'Appareil', le: a.etat && a.etat.exporteLe }));
+        const j = await r.json(), salonAvant = (salonActif() || {}).id;
+        const moi = nomAppareil(), vus = new Map();
+        for (const a of j.appareils) {
+          const nom = (a.etat && (a.etat.appareil || a.etat.par)) || 'Appareil', le = (a.etat && a.etat.exporteLe) || '';
+          if (nom === moi || a.id === id || a.appareil === id) continue;
+          if (!vus.has(nom) || le > vus.get(nom).le) vus.set(nom, { nom, le });
+        }
+        synchro.appareils = [...vus.values()];
         for (const a of j.appareils) if (a.etat && a.etat.app === 'carte-prospection') { const x = fusionner(a.etat); recus += x.ajouts + x.majs; }
         synchro.etag = r.headers.get('ETag') || '';
         enregistrerLocal(); dessiner(); majModeSalon();
+        const sa = salonActif();
+        if (sa && sa.id !== salonAvant) toast(`Salon ${sa.nom} repris depuis un autre appareil`);
       }
       // 2. Ce que cet appareil a noté
       const corps = JSON.stringify(etatPourEnvoi(true));
       const emp = corps.length + ':' + [...corps].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
       if (emp !== synchro.envoye || manuel) {
-        await appelPi(`/etat/${synchro.appareil}`, { method: 'PUT', body: corps, headers: { 'Content-Type': 'application/json' }, delai: 60000 });
+        await appelPi(`/etat/${encodeURIComponent(id)}`, { method: 'PUT', body: corps, headers: { 'Content-Type': 'application/json' }, delai: 60000 });
         synchro.envoye = emp;
       }
       // 3. Les photos, dans les deux sens
@@ -2741,7 +2781,14 @@ function fusionner(src) {
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi || photosChangees) majs++;
   }
   if ((src.besoinsListeMaj || '') > (etat.besoinsListeMaj || '')) { etat.besoinsListe = src.besoinsListe; etat.besoinsListeMaj = src.besoinsListeMaj; }
-  for (const x of src.salons || []) { const l = salons().find(y => y.id === x.id); if (!l) etat.salons = [...salons(), x]; else if ((x.maj || '') > (l.maj || '')) Object.assign(l, x); }
+  for (const x of src.salons || []) {
+    const l = salons().find(y => y.id === x.id);
+    if (!l) { etat.salons = [...salons(), JSON.parse(JSON.stringify(x))]; continue; }
+    const pres = Object.assign({}, l.presence);
+    for (const [k, e] of Object.entries(x.presence || {})) if (!pres[k] || (e.maj || '') > (pres[k].maj || '')) pres[k] = e;
+    if ((x.maj || '') > (l.maj || '')) Object.assign(l, x);
+    if (Object.keys(pres).length) l.presence = pres;
+  }
   // Rues terminées : la décision la plus récente gagne
   etat.rues = etat.rues || {};
   for (const [k, r] of Object.entries(src.rues || {})) if (!etat.rues[k] || r.maj > etat.rues[k].maj) etat.rues[k] = r;
