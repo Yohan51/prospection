@@ -1941,7 +1941,8 @@ function synchroniser(manuel) {
         }
         synchro.appareils = [...vus.values()];
         for (const a of j.appareils) if (a.etat && a.etat.app === 'carte-prospection') { const x = fusionner(a.etat); recus += x.ajouts + x.majs; }
-        for (const a of j.appareils) if (a.etat && a.etat.app === 'relais-sms') recus += lireRelais(a.etat);
+        // Compte rendu du raccourci « Relais SMS » (publié sous forme de carte vide pour être accepté par le Pi)
+        for (const a of j.appareils) if (a.etat && a.etat.envoyes) recus += lireRelais(a.etat);
         synchro.etag = r.headers.get('ETag') || '';
         enregistrerLocal(); dessiner(); majModeSalon();
         const sa = salonActif();
