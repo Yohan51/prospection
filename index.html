@@ -868,7 +868,9 @@ function texteSms(x) {
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
   const adr = adresseRdv(p).replace(/\s+/g, ' ').trim();
-  return `Bonjour${nom ? ' ' + nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${adr ? ' au ' + adr : ''}. À bientôt, ${SIGNATURE_SMS}`;
+  const lieu = adr ? ' au ' + adr : '';
+  if (x.type === 'r2') return `Bonjour${nom ? ' ' + nom : ''}, suite à notre premier échange, je vous confirme notre second rendez-vous du ${jour} à ${heure}${lieu}, pour vous présenter notre proposition. À bientôt, ${SIGNATURE_SMS}`;
+  return `Bonjour${nom ? ' ' + nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${lieu}. À bientôt, ${SIGNATURE_SMS}`;
 }
 // État de la confirmation : 'envoye', 'ignore', 'attente' (à envoyer) ou '' (pas concerné)
 function etatSms(x) {
