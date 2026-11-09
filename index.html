@@ -855,15 +855,32 @@ function adresseRdv(p) { return (p.horsCarte ? '' : p.adresse) || (p.contact && 
 // Les rendez-vous d'une fiche qui peuvent recevoir une confirmation
 function rdvsSms(p) {
   const out = [];
-  if (p.r1 && p.r1.date) out.push({ p, type: 'r1', rdv: p.r1, par: p.r1.par, champ: 'smsR1', cle: cleRdvSms(p.r1) });
+  if (p.r1 && p.r1.date) out.push({ p, type: 'r1', rdv: p.r1, par: p.r1.par, champ: 'smsR1', cle: cleRdvSms(p.r1), cree: p.r1.cree || p.cree });
   const e2 = derniereEtape(p, 'r2');
-  if (e2 && e2.rdv && e2.rdv.date && etapeDe(p) === 'r2') out.push({ p, type: 'r2', rdv: e2.rdv, par: e2.auteur, champ: 'smsR2', cle: 'r2|' + cleRdvSms(e2.rdv) });
+  if (e2 && e2.rdv && e2.rdv.date && etapeDe(p) === 'r2') out.push({ p, type: 'r2', rdv: e2.rdv, par: e2.auteur, champ: 'smsR2', cle: 'r2|' + cleRdvSms(e2.rdv), cree: e2.date });
   return out;
 }
 const smsDe = (p, type) => rdvsSms(p).find(x => x.type === type) || null;
+/* Rappel la veille : un 2e SMS, envoyé à partir de 16 h la veille et jusqu'à 2 h avant le rendez-vous.
+   Pas de rappel pour un rendez-vous pris moins de 20 h avant (la confirmation suffit),
+   ni tant que la confirmation elle-même n'est pas partie. */
+function rappelsSms(p) {
+  return rdvsSms(p).map(x => Object.assign({}, x, { rappel: true, confirmation: x.champ, champ: x.type === 'r2' ? 'rappelR2' : 'rappelR1', cle: 'rappel|' + x.cle }));
+}
+const trouverSms = (p, type, rappel) => (rappel ? rappelsSms(p) : rdvsSms(p)).find(x => x.type === type) || null;
+function fenetreRappel(rdv) {
+  const d = dateR1(rdv), debut = new Date(d); debut.setDate(d.getDate() - 1); debut.setHours(16, 0, 0, 0);
+  const t = Date.now(); return t >= +debut && t < +d - 2 * 3600e3;
+}
 const cleSms = x => `${x.p.id}|${x.cle}`;
 function texteSms(x) {
   const { p, rdv } = x, d = dateR1(rdv);
+  if (x.rappel) {
+    const nom = nomClient(p), adr = adresseRdv(p).replace(/\s+/g, ' ').trim();
+    const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
+    const quandRdv = jourCle(d) === jourCle(new Date()) ? 'aujourd’hui' : 'demain ' + d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    return `Bonjour${nom ? ' ' + nom : ''}, petit rappel : nous avons rendez-vous ${quandRdv} à ${heure}${adr ? ' au ' + adr : ''}. En cas d’empêchement, n’hésitez pas à me prévenir à ce numéro. À bientôt, ${SIGNATURE_SMS}`;
+  }
   const nom = nomClient(p);
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
@@ -879,6 +896,12 @@ function etatSms(x) {
   const s = x.p[x.champ];
   if (s && s.cle === x.cle) return s.ignore ? 'ignore' : 'envoye';
   if (dateR1(x.rdv) < new Date() || !telR1(x.p)) return '';
+  if (x.rappel) {
+    if (!fenetreRappel(x.rdv)) return '';
+    if (x.cree && +dateR1(x.rdv) - Date.parse(x.cree) < 20 * 3600e3) return '';
+    const c = x.p[x.confirmation], cleConf = x.cle.slice('rappel|'.length);
+    if (!(c && c.cle === cleConf)) return '';
+  }
   return 'attente';
 }
 /* Envoi automatique : le raccourci « Relais SMS » de l'iPhone pro lit sur le Pi la liste smsAFaire publiée par
@@ -892,9 +915,10 @@ function smsPourRelais() {
 function smsFaitsTexte() {
   const out = [];
   for (const p of etat.portes) {
-    for (const ch of ['smsR1', 'smsR2']) if (p[ch] && p[ch].cle) out.push(`${p.id}|${p[ch].cle}`);
+    for (const ch of ['smsR1', 'smsR2', 'rappelR1', 'rappelR2']) if (p[ch] && p[ch].cle) out.push(`${p.id}|${p[ch].cle}`);
     for (const c of p.smsAnciennes || []) out.push(`${p.id}|${c}`);
-    if (p.supprime || etapeDe(p) === 'perdu') for (const x of rdvsSms(p)) out.push(cleSms(x));
+    for (const c of p.smsAnciennes || []) out.push(`${p.id}|rappel|${c}`);
+    if (p.supprime || etapeDe(p) === 'perdu') for (const x of [...rdvsSms(p), ...rappelsSms(p)]) out.push(cleSms(x));
   }
   return out.join('\n');
 }
@@ -905,12 +929,13 @@ function lireRelais(src) {
     const i = ligne.indexOf('|'); if (i < 1) continue;
     const id = ligne.slice(0, i).trim(), cle = ligne.slice(i + 1).trim();
     const p = etat.portes.find(x => x.id === id); if (!p) continue;
-    const ch = cle.startsWith('r2|') ? 'smsR2' : 'smsR1';
+    const rappel = cle.startsWith('rappel|'), r2 = (rappel ? cle.slice(7) : cle).startsWith('r2|');
+    const ch = rappel ? (r2 ? 'rappelR2' : 'rappelR1') : (r2 ? 'smsR2' : 'smsR1');
     if (!(p[ch] && p[ch].cle === cle)) { p[ch] = { cle, envoye: maintenant(), maj: maintenant(), par: 'relais' }; n++; }
   }
   return n;
 }
-function smsAEnvoyer() { return portes().flatMap(rdvsSms).filter(x => etatSms(x) === 'attente').sort((a, b) => dateR1(a.rdv) - dateR1(b.rdv)); }
+function smsAEnvoyer() { return portes().flatMap(p => [...rdvsSms(p), ...rappelsSms(p)]).filter(x => etatSms(x) === 'attente').sort((a, b) => dateR1(a.rdv) - dateR1(b.rdv)); }
 function envoyerSms(x) {
   const num = telR1(x.p); if (!num) return toast('Pas de numéro de portable pour ce client.');
   x.p[x.champ] = { cle: x.cle, envoye: maintenant(), maj: maintenant(), par: etat.moi };
@@ -919,7 +944,7 @@ function envoyerSms(x) {
 }
 function ignorerSms(x) {
   x.p[x.champ] = { cle: x.cle, ignore: true, maj: maintenant(), par: etat.moi };
-  sauver(); dessiner(); toast(`Pas de SMS pour ce ${x.type.toUpperCase()}`);
+  sauver(); dessiner(); toast(x.rappel ? 'Pas de rappel pour ce rendez-vous' : `Pas de SMS pour ce ${x.type.toUpperCase()}`);
 }
 // Si la date ou l'heure d'un rendez-vous change, l'ancienne confirmation ne doit jamais partir
 function retenirAncienneCle(p, type, avant) {
@@ -928,7 +953,8 @@ function retenirAncienneCle(p, type, avant) {
 }
 function ligneSms(p, type) {
   const x = smsDe(p, type), e = etatSms(x); if (!e) return '';
-  if (e === 'envoye') return `<span class="qui">✓ SMS de confirmation envoyé ${esc(quand(p[x.champ].envoye))}</span>`;
+  const r = trouverSms(p, type, true), rp = r && p[r.champ] && p[r.champ].cle === r.cle && p[r.champ].envoye ? `<br>✓ Rappel envoyé ${esc(quand(p[r.champ].envoye))}` : '';
+  if (e === 'envoye') return `<span class="qui">✓ SMS de confirmation envoyé ${esc(quand(p[x.champ].envoye))}${rp}</span>`;
   if (e === 'ignore') return `<span class="qui">Pas de SMS de confirmation pour ce ${type.toUpperCase()}</span>`;
   if (relaisActif()) return '<span class="qui">SMS de confirmation : envoi automatique par le téléphone pro</span>';
   return estTelPro() ? '' : '<span class="qui">SMS de confirmation : en attente sur le téléphone pro</span>';
@@ -2724,7 +2750,7 @@ function listesMenu() {
   let h = '';
   const al = alerteRelais(); if (al) h += `<span class="alerte" style="display:block;margin:0 0 12px">${esc(al)}</span>`;
   const sms = estTelPro() ? smsAEnvoyer() : [];
-  if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(({ p, type, rdv }) => `<li><button data-sms="${p.id}|${type}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · ${type.toUpperCase()} ${esc(texteR1(rdv))}</span><span class="m">${esc([telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}|${type}">Ne pas envoyer</button></li>`).join('')}</ul>`;
+  if (sms.length) h += `<h3>SMS à envoyer (${sms.length})</h3><ul class="liste">${sms.map(({ p, type, rdv, rappel }) => `<li><button data-sms="${p.id}|${type}|${rappel ? 'rappel' : ''}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · ${rappel ? 'Rappel ' : ''}${type.toUpperCase()} ${esc(texteR1(rdv))}</span><span class="m">${esc([telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}|${type}|${rappel ? 'rappel' : ''}">Ne pas envoyer</button></li>`).join('')}</ul>`;
   const rap = aRappelerListe();
   if (rap.length) h += `<h3>À rappeler (${rap.length})</h3><ul class="liste">${rap.map(p => {
     const r = p.aRappeler, retard = r && r.date && dateRappel(r) < new Date();
@@ -2855,7 +2881,7 @@ $('#b-menu').onclick = (demande) => {
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
     f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
-    const smsDuBouton = v => { const [id, type] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? smsDe(p, type) : null; };
+    const smsDuBouton = v => { const [id, type, rappel] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? trouverSms(p, type, !!rappel) : null; };
     f.querySelectorAll('[data-sms]').forEach(b => b.onclick = () => { const x = smsDuBouton(b.dataset.sms); if (x) { envoyerSms(x); $('#b-menu').onclick('jour'); } });
     f.querySelectorAll('[data-sms-non]').forEach(b => b.onclick = () => { const x = smsDuBouton(b.dataset.smsNon); if (x) { ignorerSms(x); $('#b-menu').onclick('jour'); } });
     f.querySelectorAll('.pile > .liste [data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
@@ -2922,7 +2948,7 @@ function fusionner(src) {
     }
     for (const k of ['prepR1', 'prepR2']) if (p[k] && (!loc[k] || (p[k].maj || '') > (loc[k].maj || ''))) loc[k] = p[k];
     if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
-    for (const ch of ['smsR1', 'smsR2']) if (p[ch] && (!loc[ch] || (p[ch].maj || '') > (loc[ch].maj || ''))) loc[ch] = p[ch];
+    for (const ch of ['smsR1', 'smsR2', 'rappelR1', 'rappelR2']) if (p[ch] && (!loc[ch] || (p[ch].maj || '') > (loc[ch].maj || ''))) loc[ch] = p[ch];
     if (p.smsAnciennes) loc.smsAnciennes = [...new Set([...(loc.smsAnciennes || []), ...p.smsAnciennes])];
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
