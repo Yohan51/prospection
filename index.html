@@ -933,6 +933,17 @@ function ligneSms(p, type) {
   if (relaisActif()) return '<span class="qui">SMS de confirmation : envoi automatique par le téléphone pro</span>';
   return estTelPro() ? '' : '<span class="qui">SMS de confirmation : en attente sur le téléphone pro</span>';
 }
+/* Surveillance : alerte si des SMS attendent et que le relais n'a pas tourné depuis 6 h (en journée). */
+function texteRelaisPasse() {
+  return synchro.relaisPasse ? `Dernier passage du relais : ${quand(new Date(synchro.relaisPasse).toISOString())}` : 'Le relais n’a pas encore donné signe de vie.';
+}
+function alerteRelais() {
+  if (!relaisActif()) return '';
+  const n = smsAEnvoyer().length; if (!n) return '';
+  const h = new Date().getHours(); if (h < 10 || h >= 20) return '';
+  if (synchro.relaisPasse && Date.now() - synchro.relaisPasse < 6 * 3600e3) return '';
+  return `⚠️ ${pl(n, 'SMS')} en attente et le relais n’a pas tourné depuis plus de 6 h${synchro.relaisPasse ? ' (' + quand(new Date(synchro.relaisPasse).toISOString()) + ')' : ''}. Vérifie l’iPhone pro : allumé, réseau, automatisations.`;
+}
 const boutonSms = (p, type) => estTelPro() && etatSms(smsDe(p, type)) === 'attente' ? `<button class="b2 jaune" id="b-${type}sms">Envoyer le SMS de confirmation</button>` : '';
 function texteR1(r) {
   const d = dateR1(r);
@@ -1981,6 +1992,12 @@ function synchroniser(manuel) {
         for (const a of j.appareils) if (a.etat && a.etat.app === 'carte-prospection') { const x = fusionner(a.etat); recus += x.ajouts + x.majs; }
         // Compte rendu du raccourci « Relais SMS » (publié sous forme de carte vide pour être accepté par le Pi)
         for (const a of j.appareils) if (a.etat && a.etat.envoyes) recus += lireRelais(a.etat);
+        // Dernier signe de vie du relais (champ passeLe envoyé par le raccourci)
+        for (const a of j.appareils) {
+          const t = a.etat && a.etat.passeLe ? Date.parse(a.etat.passeLe) : NaN;
+          if (t && (!synchro.relaisPasse || t > synchro.relaisPasse)) synchro.relaisPasse = t;
+        }
+        garderSynchro();
         synchro.etag = r.headers.get('ETag') || '';
         enregistrerLocal(); dessiner(); majModeSalon();
         const sa = salonActif();
@@ -2705,6 +2722,7 @@ function listesMenu() {
   const rond = k => `<span class="pastille ${k}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>`;
   const item = (id, k, a, m, conseil) => `<li><button data-p="${id}">${rond(k)}<span class="txt"><span class="a">${esc(a)}</span><span class="m">${esc(m)}</span>${conseil ? `<span class="conseil">${esc(conseil)}</span>` : ''}</span></button></li>`;
   let h = '';
+  const al = alerteRelais(); if (al) h += `<span class="alerte" style="display:block;margin:0 0 12px">${esc(al)}</span>`;
   const sms = estTelPro() ? smsAEnvoyer() : [];
   if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(({ p, type, rdv }) => `<li><button data-sms="${p.id}|${type}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · ${type.toUpperCase()} ${esc(texteR1(rdv))}</span><span class="m">${esc([telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}|${type}">Ne pas envoyer</button></li>`).join('')}</ul>`;
   const rap = aRappelerListe();
@@ -2760,6 +2778,7 @@ $('#b-menu').onclick = (demande) => {
       <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
       <label class="coche"><input type="checkbox" id="i-pro"${estTelPro() ? ' checked' : ''}>C’est mon téléphone pro : les SMS de confirmation des R1 et R2 partent d’ici</label>
       ${estTelPro() ? `<label class="coche"><input type="checkbox" id="i-relais"${relaisActif() ? ' checked' : ''}>Envoi automatique par le raccourci « Relais SMS », même pour les rendez-vous pris sur un autre appareil</label>` : ''}
+      ${relaisActif() ? `<p class="sous" style="margin:0">${esc(texteRelaisPasse())}</p>` : ''}
       <h3>Synchronisation avec le Pi</h3>
       <p class="sous" style="margin:0" id="etat-synchro">${esc(texteEtatSynchro())}</p>
       <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
