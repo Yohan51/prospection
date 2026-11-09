@@ -2810,6 +2810,7 @@ $('#b-menu').onclick = (demande) => {
       <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
       <label class="champ">Code d’équipe<input id="sy-code" type="password" value="${esc(synchro.code)}" placeholder="le même sur tous vos appareils" autocomplete="off" autocapitalize="off"></label>
       <div class="ligne-btns"><button class="b2 plein" id="sy-ok">${synchroActive() ? 'Synchroniser maintenant' : 'Tester et activer'}</button>${synchroActive() ? '<button class="b2" id="sy-off">Désactiver</button>' : ''}</div>
+      ${synchroActive() ? '<button class="lien" id="sy-menage">Nettoyer les anciens appareils (inactifs depuis 2 jours)</button>' : ''}
       <h3>Zone de chalandise</h3>
       <p class="sous" style="margin:0">${dureeTxt(reglageZone.minutes)} de route depuis ${esc(reglageZone.nom)}.</p>
       <div class="ligne-btns"><button class="b2" id="b-zone-regler">Régler la zone</button></div>
@@ -2853,6 +2854,22 @@ $('#b-menu').onclick = (demande) => {
       Object.assign(synchro, { url, code }); if (change) Object.assign(synchro, { etag: '', envoye: '', erreur: '' });
       garderSynchro(); $('#etat-synchro').textContent = 'Synchronisation…';
       if (await synchroniser(true)) $('#b-menu').onclick();
+    };
+    // Supprime sur le Pi les appareils qui n'ont rien envoyé depuis 2 jours (leurs fiches sont déjà fusionnées partout).
+    const syMen = f.querySelector('#sy-menage');
+    if (syMen) syMen.onclick = async () => {
+      if (!syMen.dataset.ok) { syMen.dataset.ok = 1; syMen.textContent = 'Confirmer : supprimer les appareils inactifs du Pi'; return; }
+      syMen.disabled = true; syMen.textContent = 'Nettoyage…';
+      try {
+        await synchroniser(true);   // d'abord récupérer tout ce que ces appareils contiennent
+        const r = await appelPi('/etats/anciens?jours=2', { method: 'DELETE' });
+        const j = await r.json(), n = (j.supprimes || []).length;
+        synchro.etag = ''; garderSynchro(); await synchroniser(true);
+        toast(n ? `${pl(n, 'ancien appareil')} supprimé${n > 1 ? 's' : ''} du Pi` : 'Rien à nettoyer');
+      } catch (e) {
+        toast(/404|405|501/.test(String(e.message)) ? 'Le Pi n’a pas encore la mise à jour 1.4.0 de « Carte – synchro ».' : 'Nettoyage impossible : ' + e.message);
+      }
+      $('#b-menu').onclick('reglages');
     };
     const syOff = f.querySelector('#sy-off');
     if (syOff) syOff.onclick = () => { Object.assign(synchro, { url: '', code: '', etag: '', envoye: '', erreur: '', dernier: '' }); garderSynchro(); toast('Synchro désactivée sur cet appareil'); $('#b-menu').onclick(); };
