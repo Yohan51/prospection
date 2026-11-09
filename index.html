@@ -637,7 +637,7 @@ function majCompteurs() {
   const auj = jourCle(new Date());
   let n = 0, r1 = 0, ouvertes = 0;
   for (const p of portes()) for (const v of p.visites) {
-    if (v.canal === 'salon' || jourCle(v.date) !== auj || (etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi))) continue;
+    if (v.canal === 'salon' || v.canal === 'direct' || jourCle(v.date) !== auj || (etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi))) continue;
     n++; if (v.statut === 'r1') r1++; if (v.statut !== 'absent') ouvertes++;
   }
   const sa = salonActif();
@@ -776,7 +776,7 @@ function feuillePorte(p, neuf) {
     </div>`, f => {
     if (p && f.querySelector('#b-r1cal')) {
       f.querySelector('#b-r1cal').onclick = () => ajouterAuCalendrier(p);
-      const bs = f.querySelector('#b-r1sms'); if (bs) bs.onclick = () => { envoyerSmsR1(p); ouvrirPorte(p.id); };
+      const bs = f.querySelector('#b-r1sms'); if (bs) bs.onclick = () => { envoyerSms(smsDe(p, 'r1')); ouvrirPorte(p.id); };
       f.querySelector('#b-r1modif').onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
       f.querySelector('#b-r1partage').onclick = () => partagerIcs(p);
     }
@@ -842,46 +842,57 @@ const pad = n => String(n).padStart(2, '0');
 const isoLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 function dateR1(r) { return new Date(`${r.date}T${r.heure || '18:00'}:00`); }
 
-/* ───────── SMS de confirmation des R1 ─────────
+/* ───────── SMS de confirmation des rendez-vous (R1 et R2) ─────────
    Les SMS partent du téléphone pro (case à cocher dans Réglages) pour utiliser le bon numéro.
-   Les autres appareils marquent seulement le R1 « à confirmer » ; la synchro l'amène au téléphone pro. */
+   Les autres appareils marquent seulement le rendez-vous « à confirmer » ; la synchro l'amène au téléphone pro.
+   Clé d'un SMS : « id|date|heure » pour un R1, « id|r2|date|heure » pour un R2. */
 const SIGNATURE_SMS = 'Yohan CHANGUION – SUBLIME TOIT';
 function estTelPro() { try { return localStorage.getItem(CLE + ':pro') === '1'; } catch (e) { return false; } }
 function cleRdvSms(r) { return `${r.date}|${r.heure || '18:00'}`; }
 function telSms(t) { let n = String(t || '').replace(/[^+\d]/g, ''); if (/^0\d{9}$/.test(n)) n = '+33' + n.slice(1); return n.length >= 10 ? n : ''; }
 function telR1(p) { return telSms((p.r1 && p.r1.tel) || telClient(p)); }
 function adresseRdv(p) { return (p.horsCarte ? '' : p.adresse) || (p.contact && p.contact.adresseTexte) || ''; }
-function texteSmsR1(p) {
-  const r = p.r1, d = dateR1(r);
+// Les rendez-vous d'une fiche qui peuvent recevoir une confirmation
+function rdvsSms(p) {
+  const out = [];
+  if (p.r1 && p.r1.date) out.push({ p, type: 'r1', rdv: p.r1, par: p.r1.par, champ: 'smsR1', cle: cleRdvSms(p.r1) });
+  const e2 = derniereEtape(p, 'r2');
+  if (e2 && e2.rdv && e2.rdv.date && etapeDe(p) === 'r2') out.push({ p, type: 'r2', rdv: e2.rdv, par: e2.auteur, champ: 'smsR2', cle: 'r2|' + cleRdvSms(e2.rdv) });
+  return out;
+}
+const smsDe = (p, type) => rdvsSms(p).find(x => x.type === type) || null;
+const cleSms = x => `${x.p.id}|${x.cle}`;
+function texteSms(x) {
+  const { p, rdv } = x, d = dateR1(rdv);
+  const nom = nomClient(p);
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
   const adr = adresseRdv(p).replace(/\s+/g, ' ').trim();
-  return `Bonjour${r.nom ? ' ' + r.nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${adr ? ' au ' + adr : ''}. À bientôt, ${SIGNATURE_SMS}`;
+  return `Bonjour${nom ? ' ' + nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${adr ? ' au ' + adr : ''}. À bientôt, ${SIGNATURE_SMS}`;
 }
-// État de la confirmation du R1 : 'envoye', 'ignore', 'attente' (à envoyer) ou '' (pas concerné)
-function etatSmsR1(p) {
-  const r = p.r1; if (!r || !r.date || p.supprime) return '';
-  if (r.par && etat.moi && cleAdresse(r.par) !== cleAdresse(etat.moi)) return '';   // R1 pris par le collègue
-  const s = p.smsR1;
-  if (s && s.cle === cleRdvSms(r)) return s.ignore ? 'ignore' : 'envoye';
-  if (dateR1(r) < new Date() || !telR1(p)) return '';
+// État de la confirmation : 'envoye', 'ignore', 'attente' (à envoyer) ou '' (pas concerné)
+function etatSms(x) {
+  if (!x || x.p.supprime) return '';
+  if (x.par && etat.moi && cleAdresse(x.par) !== cleAdresse(etat.moi)) return '';   // rendez-vous du collègue
+  const s = x.p[x.champ];
+  if (s && s.cle === x.cle) return s.ignore ? 'ignore' : 'envoye';
+  if (dateR1(x.rdv) < new Date() || !telR1(x.p)) return '';
   return 'attente';
 }
 /* Envoi automatique : le raccourci « Relais SMS » de l'iPhone pro lit sur le Pi la liste smsAFaire publiée par
-   chaque appareil, saute tout ce qui figure dans smsFaits (envoyé, ignoré, horaire changé, porte supprimée),
-   envoie le reste et renvoie au Pi la liste de ce qu'il a envoyé (état « relais-sms »). */
+   chaque appareil, saute tout ce qui figure dans smsFaits (envoyé, ignoré, horaire changé, fiche supprimée),
+   envoie le reste et renvoie au Pi la liste de ce qu'il a envoyé (champ « envoyes »). */
 function relaisActif() { const r = etat.relaisSms && etat.relaisSms[cleMoi()]; return !!(r && r.actif); }
 function regleRelais(actif) { etat.relaisSms = Object.assign({}, etat.relaisSms, { [cleMoi()]: { actif, maj: maintenant() } }); sauver(); }
-const cleSms = p => `${p.id}|${cleRdvSms(p.r1)}`;
 function smsPourRelais() {
-  return relaisActif() ? smsAEnvoyer().map(p => ({ k: cleSms(p), tel: telR1(p), texte: texteSmsR1(p), rdv: `${p.r1.date} ${p.r1.heure || '18:00'}` })) : [];
+  return relaisActif() ? smsAEnvoyer().map(x => ({ k: cleSms(x), tel: telR1(x.p), texte: texteSms(x), rdv: `${x.rdv.date} ${x.rdv.heure || '18:00'}` })) : [];
 }
 function smsFaitsTexte() {
   const out = [];
   for (const p of etat.portes) {
-    if (p.smsR1 && p.smsR1.cle) out.push(`${p.id}|${p.smsR1.cle}`);
+    for (const ch of ['smsR1', 'smsR2']) if (p[ch] && p[ch].cle) out.push(`${p.id}|${p[ch].cle}`);
     for (const c of p.smsAnciennes || []) out.push(`${p.id}|${c}`);
-    if (p.r1 && p.r1.date && (p.supprime || etapeDe(p) === 'perdu')) out.push(cleSms(p));
+    if (p.supprime || etapeDe(p) === 'perdu') for (const x of rdvsSms(p)) out.push(cleSms(x));
   }
   return out.join('\n');
 }
@@ -891,29 +902,36 @@ function lireRelais(src) {
   for (const ligne of String(src.envoyes || '').split(/\r?\n/)) {
     const i = ligne.indexOf('|'); if (i < 1) continue;
     const id = ligne.slice(0, i).trim(), cle = ligne.slice(i + 1).trim();
-    const p = etat.portes.find(x => x.id === id);
-    if (p && !(p.smsR1 && p.smsR1.cle === cle)) { p.smsR1 = { cle, envoye: maintenant(), maj: maintenant(), par: 'relais' }; n++; }
+    const p = etat.portes.find(x => x.id === id); if (!p) continue;
+    const ch = cle.startsWith('r2|') ? 'smsR2' : 'smsR1';
+    if (!(p[ch] && p[ch].cle === cle)) { p[ch] = { cle, envoye: maintenant(), maj: maintenant(), par: 'relais' }; n++; }
   }
   return n;
 }
-function smsAEnvoyer() { return portes().filter(p => etatSmsR1(p) === 'attente').sort((a, b) => dateR1(a.r1) - dateR1(b.r1)); }
-function envoyerSmsR1(p) {
-  const num = telR1(p); if (!num) return toast('Pas de numéro de portable pour ce client.');
-  p.smsR1 = { cle: cleRdvSms(p.r1), envoye: maintenant(), maj: maintenant(), par: etat.moi };
+function smsAEnvoyer() { return portes().flatMap(rdvsSms).filter(x => etatSms(x) === 'attente').sort((a, b) => dateR1(a.rdv) - dateR1(b.rdv)); }
+function envoyerSms(x) {
+  const num = telR1(x.p); if (!num) return toast('Pas de numéro de portable pour ce client.');
+  x.p[x.champ] = { cle: x.cle, envoye: maintenant(), maj: maintenant(), par: etat.moi };
   sauver(); dessiner();
-  ouvrirUrl('sms:' + num + '&body=' + encodeURIComponent(texteSmsR1(p)));
+  ouvrirUrl('sms:' + num + '&body=' + encodeURIComponent(texteSms(x)));
 }
-function ignorerSmsR1(p) {
-  p.smsR1 = { cle: cleRdvSms(p.r1), ignore: true, maj: maintenant(), par: etat.moi };
-  sauver(); dessiner(); toast('Pas de SMS pour ce R1');
+function ignorerSms(x) {
+  x.p[x.champ] = { cle: x.cle, ignore: true, maj: maintenant(), par: etat.moi };
+  sauver(); dessiner(); toast(`Pas de SMS pour ce ${x.type.toUpperCase()}`);
 }
-function ligneSmsR1(p) {
-  const e = etatSmsR1(p); if (!e) return '';
-  if (e === 'envoye') return `<span class="qui">✓ SMS de confirmation envoyé ${esc(quand(p.smsR1.envoye))}</span>`;
-  if (e === 'ignore') return '<span class="qui">Pas de SMS de confirmation pour ce R1</span>';
+// Si la date ou l'heure d'un rendez-vous change, l'ancienne confirmation ne doit jamais partir
+function retenirAncienneCle(p, type, avant) {
+  const apres = smsDe(p, type);
+  if (avant && (!apres || apres.cle !== avant)) p.smsAnciennes = [...new Set([...(p.smsAnciennes || []), avant])];
+}
+function ligneSms(p, type) {
+  const x = smsDe(p, type), e = etatSms(x); if (!e) return '';
+  if (e === 'envoye') return `<span class="qui">✓ SMS de confirmation envoyé ${esc(quand(p[x.champ].envoye))}</span>`;
+  if (e === 'ignore') return `<span class="qui">Pas de SMS de confirmation pour ce ${type.toUpperCase()}</span>`;
   if (relaisActif()) return '<span class="qui">SMS de confirmation : envoi automatique par le téléphone pro</span>';
   return estTelPro() ? '' : '<span class="qui">SMS de confirmation : en attente sur le téléphone pro</span>';
 }
+const boutonSms = (p, type) => estTelPro() && etatSms(smsDe(p, type)) === 'attente' ? `<button class="b2 jaune" id="b-${type}sms">Envoyer le SMS de confirmation</button>` : '';
 function texteR1(r) {
   const d = dateR1(r);
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -922,7 +940,7 @@ function texteR1(r) {
 function feuilleR1(p, apres) {
   const r = Object.assign({}, p.contact ? { nom: p.contact.nom, tel: p.contact.tel } : {}, p.aRappeler ? { nom: p.aRappeler.nom, tel: p.aRappeler.tel } : {}, p.r1 || {});
   const demain = new Date(Date.now() + 864e5);
-  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon');
+  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon' && v.canal !== 'direct');
   ouvrirFeuille(`
     <div class="entete"><h2 id="f-titre">${r.date ? 'Modifier le R1' : 'R1 pris 🎉'}</h2>${BTN_FERMER}</div>
     <p class="sous">${esc(court(p))}${p.ville ? ' · ' + esc(p.ville) : ''}</p>
@@ -950,9 +968,8 @@ function feuilleR1(p, apres) {
     const enregistrer = () => {
       const n = lire();
       if (!n.date) { toast('Choisis la date du R1.'); return null; }
-      const ancienne = p.r1 && p.r1.date ? cleRdvSms(p.r1) : '';
-      if (ancienne && ancienne !== cleRdvSms(n)) p.smsAnciennes = [...new Set([...(p.smsAnciennes || []), ancienne])];
-      p.r1 = n; p.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
+      const ancienne = (smsDe(p, 'r1') || {}).cle;
+      p.r1 = n; retenirAncienneCle(p, 'r1', ancienne); p.maj = maintenant(); sauver(); dessiner(); fermerFeuille();
       return n;
     };
     f.querySelector('#r-ok').onclick = () => { if (enregistrer()) { toast(`R1 noté : ${texteR1(p.r1)}`); apres && apres(); } };
@@ -979,6 +996,7 @@ const icsDate = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 const lienPlans = p => `https://maps.apple.com/?daddr=${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
 const frappeeLe = p => {
   if (p.salon) return `Rencontré au salon ${p.salon.nom} le ${new Date(p.cree).toLocaleDateString('fr-FR')}`;
+  if (p.origine === 'direct') return `Prospect ${p.source ? p.source.toLowerCase() : 'hors porte-à-porte'} du ${new Date(p.cree).toLocaleDateString('fr-FR')}`;
   const ch = chantierProche(p.lat, p.lng);
   return `Porte frappée le ${new Date(p.visites.find(v => v.statut === 'r1')?.date || p.cree).toLocaleDateString('fr-FR')}${ch && ch.d < 2000 ? ` (chantier ${ch.c.nom})` : ''}`;
 };
@@ -1041,8 +1059,8 @@ function carteR1(p) {
   const r = p.r1; if (!r || !r.date) return '';
   const passe = dateR1(r) < new Date();
   return `<div class="carte-r1"><span class="quand-r1">${passe ? 'R1 passé : ' : 'R1 '}${esc(texteR1(r))}</span>
-    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>${etiquettesBesoins(besoinsDe(p))}${ligneSmsR1(p)}
-    <div class="ligne-btns">${estTelPro() && etatSmsR1(p) === 'attente' ? '<button class="b2 jaune" id="b-r1sms">Envoyer le SMS de confirmation</button>' : ''}${passe ? '' : '<button class="b2 jaune" id="b-prep">Préparer le R1</button>'}${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
+    <span class="qui">${esc([r.nom, r.tel].filter(Boolean).join(' · ') || 'Client sans nom')}${r.besoin ? '<br>' + esc(r.besoin) : ''}</span>${etiquettesBesoins(besoinsDe(p))}${ligneSms(p, 'r1')}
+    <div class="ligne-btns">${boutonSms(p, 'r1')}${passe ? '' : '<button class="b2 jaune" id="b-prep">Préparer le R1</button>'}${r.tel ? `<a class="b2" href="tel:${esc(r.tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}
       <button class="b2" id="b-r1cal">Calendrier</button><button class="b2" id="b-r1modif">Modifier</button><button class="b2" id="b-r1partage">Envoyer le .ics</button></div></div>`;
 }
 function r1AVenir() {
@@ -1152,8 +1170,8 @@ function carteSuivi(p) {
     <span class="suivi-titre">${esc(titre)}${et === 'r2' && rdvR2(p) && rdvR2(p).note ? `<small>${esc(rdvR2(p).note)}</small>` : ''}</span>
     ${alerte ? `<span class="alerte">${esc(alerte)}</span>` : ''}
     ${et !== 'r1' && (nomClient(p) || telClient(p)) ? `<span class="qui">${esc([nomClient(p), telClient(p)].filter(Boolean).join(' · '))}</span>` : ''}
-    ${et !== 'r1' ? etiquettesBesoins(besoinsDe(p)) : ''}
-    <div class="ligne-btns">${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2 jaune" id="b-prep">Préparer le R2</button><button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
+    ${et !== 'r1' ? etiquettesBesoins(besoinsDe(p)) : ''}${et === 'r2' ? ligneSms(p, 'r2') : ''}
+    <div class="ligne-btns">${et === 'r2' ? boutonSms(p, 'r2') : ''}${et !== 'r1' && telClient(p) ? `<a class="b2" href="tel:${esc(telClient(p).replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}${et === 'r2' && rdvR2(p) ? '<button class="b2 jaune" id="b-prep">Préparer le R2</button><button class="b2" id="b-r2cal">R2 au calendrier</button>' : ''}${btns}</div>
     ${histo ? `<ul class="histo">${histo}</ul><button class="lien" id="b-suivi-annuler">Annuler la dernière étape</button>` : ''}
   </div>`;
 }
@@ -1161,6 +1179,7 @@ function brancherSuivi(f, p) {
   const bp = f.querySelector('#b-prep'); if (bp) bp.onclick = () => feuillePrep(p);
   f.querySelectorAll('[data-et]').forEach(b => b.onclick = () => feuilleEtape(p, b.dataset.et));
   const r2 = f.querySelector('#b-r2cal'); if (r2) r2.onclick = () => ajouterAuCalendrier(p, evenementR2(p));
+  const s2 = f.querySelector('#b-r2sms'); if (s2) s2.onclick = () => { envoyerSms(smsDe(p, 'r2')); ouvrirPorte(p.id); };
   const nr = f.querySelector('#b-noter-r1'); if (nr) nr.onclick = () => feuilleR1(p, () => ouvrirPorte(p.id));
   const an = f.querySelector('#b-suivi-annuler');
   if (an) an.onclick = () => {
@@ -1206,7 +1225,10 @@ function feuilleEtape(p, etape) {
       }
       if (etape === 'devis' || etape === 'signe') e.montant = lireMontant(val('#e-montant'));
       if (etape === 'perdu') e.raison = raison;
-      p.suivi = [...suiviDe(p), e]; p.maj = maintenant(); sauver(); dessiner();
+      const ancienneR2 = (smsDe(p, 'r2') || {}).cle;
+      p.suivi = [...suiviDe(p), e];
+      if (etape === 'r2') retenirAncienneCle(p, 'r2', ancienneR2);
+      p.maj = maintenant(); sauver(); dessiner();
       return true;
     };
     f.querySelector('#e-ok').onclick = () => { if (enregistrer()) { revenir(); toast(texteEtape(suiviDe(p).slice(-1)[0])); } };
@@ -1246,7 +1268,7 @@ function carteRappel(p) {
 }
 function feuilleRappel(p, apres) {
   const r = p.aRappeler || (p.contact ? { nom: p.contact.nom, tel: p.contact.tel, note: p.contact.note } : {});
-  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon');
+  const derniereNote = [...p.visites].reverse().find(v => v.note && v.canal !== 'salon' && v.canal !== 'direct');
   const dansJours = j => isoLocal(new Date(Date.now() + j * 864e5));
   const choix = [[0, 'Ce soir'], [1, 'Demain'], [3, 'Dans 3 jours'], [7, 'Dans 1 semaine'], [14, 'Dans 2 semaines']];
   const d0 = r.date || dansJours(1);
@@ -1588,16 +1610,20 @@ function majModeSalon() {
   majCompteurs();
 }
 
-function feuilleProspect(p) {
-  const s = p ? (salonDe(p.salon && p.salon.id) || p.salon) : salonActif();
-  if (!s) return;
+const SOURCES = ['Appel entrant', 'Recommandation', 'Site / réseaux', 'Passage à l’agence', 'Autre'];
+// Prospect d'un salon, ou prospect « direct » (hors porte-à-porte : appel, recommandation…) quand direct est vrai
+function feuilleProspect(p, direct) {
+  const s = p ? (p.salon ? (salonDe(p.salon.id) || p.salon) : null) : (direct ? null : salonActif());
+  if (!s && !(p ? p.origine === 'direct' : direct)) return;
+  let source = p ? (p.source || '') : '';
   const c = p ? (p.contact || {}) : {};
   if (!p) { photosEnAttente = []; besoinsEnAttente = []; }
   let adr = p && !p.horsCarte ? { label: p.adresse, numero: p.numero, rue: p.rue, ville: p.ville, lat: p.lat, lng: p.lng } : null;
   let projet = c.projet || '', delai;
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">${p ? 'Modifier le prospect' : 'Nouveau prospect'}</h2>${BTN_FERMER}</div>
-    <p class="sous">Salon ${esc(s.nom)}</p>
+    <p class="sous">${s ? `Salon ${esc(s.nom)}` : 'Prospect hors porte-à-porte'}</p>
     <div class="pile">
+      ${s ? '' : `<div class="champ" style="gap:8px">D’où vient-il ?<div class="puces">${SOURCES.map(x => `<button class="puce" data-src="${esc(x)}" aria-pressed="${x === source}">${esc(x)}</button>`).join('')}</div></div>`}
       <label class="champ">Nom<input id="c-nom" value="${esc(c.nom || '')}" placeholder="ex. M. et Mme Martin" autocomplete="off" autocapitalize="words"></label>
       <div class="grille2">
         <label class="champ">Téléphone<input id="c-tel" type="tel" value="${esc(c.tel || '')}" placeholder="06 12 34 56 78" autocomplete="off"></label>
@@ -1615,11 +1641,16 @@ function feuilleProspect(p) {
         : `<h3>Et ensuite ?</h3><div class="statuts">
           <button class="st" data-suite="r1"><span class="pastille r1"></span><span>R1 pris<small>rendez-vous calé</small></span></button>
           <button class="st" data-suite="rappel"><span class="pastille rappel"></span><span>À rappeler<small>fixer une date</small></span></button>
-          <button class="st large" data-suite="contact"><span class="pastille refus"></span><span>Simple contact<small>la fiche seulement, sans date</small></span></button></div>`}
+          ${s ? '' : '<button class="st" data-suite="r2"><span class="pastille r1"></span><span>R1 déjà fait<small>R2 calé</small></span></button>'}
+          <button class="st${s ? ' large' : ''}" data-suite="contact"><span class="pastille refus"></span><span>Simple contact<small>la fiche seulement, sans date</small></span></button></div>`}
     </div>`, f => {
     brancherBesoins(f, p);
     brancherPhotos(f.querySelector('#photos'), p);
     remplirZone(f);
+    f.querySelectorAll('[data-src]').forEach(b => b.onclick = () => {
+      source = source === b.dataset.src ? '' : b.dataset.src;
+      f.querySelectorAll('[data-src]').forEach(x => x.setAttribute('aria-pressed', x.dataset.src === source));
+    });
     f.querySelectorAll('[data-proj]').forEach(b => b.onclick = () => {
       projet = projet === b.dataset.proj ? '' : b.dataset.proj;
       f.querySelectorAll('[data-proj]').forEach(x => x.setAttribute('aria-pressed', x.dataset.proj === projet));
@@ -1649,36 +1680,40 @@ function feuilleProspect(p) {
       return ct;
     };
     const placer = (q, ct) => {
-      const ici = adr || (s.lat ? { lat: s.lat, lng: s.lng } : position) || carte.getCenter();
+      const ici = adr || (s && s.lat ? { lat: s.lat, lng: s.lng } : position) || carte.getCenter();
       Object.assign(q, { contact: ct, adresse: adr ? adr.label : '', numero: adr ? adr.numero : '', rue: adr ? adr.rue : '', ville: adr ? adr.ville : '',
         lat: ici.lat, lng: ici.lng, horsCarte: !adr, maj: maintenant() });
     };
     const save = f.querySelector('#c-save');
     if (save) save.onclick = async () => {
       const ct = await lire(); if (!ct) return;
-      placer(p, ct); sauver(); dessiner(); majModeSalon(); ouvrirPorte(p.id); toast('Prospect enregistré');
+      placer(p, ct); if (!s) p.source = source; sauver(); dessiner(); majModeSalon(); ouvrirPorte(p.id); toast('Prospect enregistré');
     };
     f.querySelectorAll('[data-suite]').forEach(b => b.onclick = async () => {
       const ct = await lire(); if (!ct) return;
-      const suite = b.dataset.suite, statut = suite === 'r1' ? 'r1' : 'rappel';
-      const np = { id: uid(), origine: 'salon', salon: { id: s.id, nom: s.nom }, statut, auteur: etat.moi, cree: maintenant(),
-        visites: [{ date: maintenant(), statut, note: `Rencontré au salon ${s.nom}`, auteur: etat.moi, canal: 'salon' }] };
+      const suite = b.dataset.suite, statut = suite === 'r1' || suite === 'r2' ? 'r1' : 'rappel';
+      const np = s
+        ? { id: uid(), origine: 'salon', salon: { id: s.id, nom: s.nom }, statut, auteur: etat.moi, cree: maintenant(),
+            visites: [{ date: maintenant(), statut, note: `Rencontré au salon ${s.nom}`, auteur: etat.moi, canal: 'salon' }] }
+        : { id: uid(), origine: 'direct', source, statut, auteur: etat.moi, cree: maintenant(),
+            visites: [{ date: maintenant(), statut, note: `Prospect ${source ? source.toLowerCase() : 'hors porte-à-porte'}`, auteur: etat.moi, canal: 'direct' }] };
       placer(np, ct);
       if (besoinsEnAttente.length) { np.besoins = besoinsEnAttente; np.besoinsMaj = maintenant(); besoinsEnAttente = []; }
       if (photosEnAttente.length) { np.photos = photosEnAttente.map(id => ({ id, date: maintenant(), auteur: etat.moi })); photosEnAttente = []; }
       etat.portes.push(np); sauver(); dessiner(); majModeSalon();
       const fiche = () => feuilleFiche(np, true);
       if (suite === 'r1') feuilleR1(np, fiche);
+      else if (suite === 'r2') feuilleEtape(np, 'r2');
       else if (suite === 'rappel') feuilleRappel(np, fiche);
       else fiche();
     });
   });
 }
 function carteProspect(p) {
-  if (p.origine !== 'salon') return '';
+  if (p.origine !== 'salon' && p.origine !== 'direct') return '';
   const c = p.contact || {};
   return `<div class="carte-suivi">
-    <span class="suivi-titre">${esc(c.nom || 'Prospect sans nom')}<small>Salon ${esc(p.salon.nom)} · ${esc(new Date(p.cree).toLocaleDateString('fr-FR'))}${c.projet ? ' · ' + esc(c.projet) : ''}</small></span>
+    <span class="suivi-titre">${esc(c.nom || 'Prospect sans nom')}<small>${p.salon ? 'Salon ' + esc(p.salon.nom) : esc(p.source || 'Hors porte-à-porte')} · ${esc(new Date(p.cree).toLocaleDateString('fr-FR'))}${c.projet ? ' · ' + esc(c.projet) : ''}</small></span>
     <span class="qui">${esc([c.tel, c.email].filter(Boolean).join(' · ') || 'Pas de coordonnées')}${p.horsCarte ? `<br>${esc(c.adresseTexte || 'Adresse non notée')}${c.adresseTexte ? ' (non placée sur la carte)' : ''}` : ''}${c.note ? '<br>' + esc(c.note) : ''}</span>
     ${etiquettesBesoins(besoinsDe(p))}
     <span class="sous" style="margin:0">${c.consent ? 'Accepte d’être recontacté' : 'Accord pour être recontacté non noté'}</span>
@@ -1696,7 +1731,7 @@ function texteFiche(p) {
   const nom = c.nom || nomClient(p), tel = c.tel || telClient(p);
   const L = [];
   L.push(`FICHE PROSPECT${p.salon ? ' – ' + p.salon.nom : ''}`);
-  L.push(`${p.salon ? 'Rencontré' : 'Porte frappée'} le ${new Date(p.cree).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}${p.auteur ? ' par ' + p.auteur : ''}`);
+  L.push(`${p.salon ? 'Rencontré' : p.origine === 'direct' ? `Prospect ${(p.source || 'hors porte-à-porte').toLowerCase()}, noté` : 'Porte frappée'} le ${new Date(p.cree).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}${p.auteur ? ' par ' + p.auteur : ''}`);
   L.push('');
   L.push(`Nom : ${nom || '–'}`);
   L.push(`Téléphone : ${tel || '–'}`);
@@ -1708,7 +1743,7 @@ function texteFiche(p) {
   if (r1 && r1.besoin) L.push(`Précisions R1 : ${r1.besoin}`);
   if (ra && ra.note) L.push(`Précisions : ${ra.note}`);
   if (c.note) L.push(`Note : ${c.note}`);
-  const notes = p.visites.filter(v => v.note && v.canal !== 'salon').map(v => `${new Date(v.date).toLocaleDateString('fr-FR')} : ${v.note}`);
+  const notes = p.visites.filter(v => v.note && v.canal !== 'salon' && v.canal !== 'direct').map(v => `${new Date(v.date).toLocaleDateString('fr-FR')} : ${v.note}`);
   if (notes.length) L.push(`Notes de passage : ${notes.join(' / ')}`);
   if (p.salon) L.push(`Accepte d’être recontacté : ${c.consent ? 'oui' : 'non noté'}`);
   if (photosDe(p).length) L.push(`Photos : ${photosDe(p).length} (jointes si partagées, sinon dans l’appli)`);
@@ -1824,13 +1859,14 @@ function feuillePrep(p) {
   const prep = p[cle] || { faits: [], notes: '' };
   const c = p.contact || {}, nom = nomClient(p), tel = telClient(p);
   const av = argumentsVoisinage(p);
-  const notes = p.visites.filter(v => v.note && v.canal !== 'salon').map(v => `<li><span class="pastille ${v.statut}"></span><span><span class="quand">${esc(new Date(v.date).toLocaleDateString('fr-FR'))}</span> ${esc(v.note)}</span></li>`);
+  const notes = p.visites.filter(v => v.note && v.canal !== 'salon' && v.canal !== 'direct').map(v => `<li><span class="pastille ${v.statut}"></span><span><span class="quand">${esc(new Date(v.date).toLocaleDateString('fr-FR'))}</span> ${esc(v.note)}</span></li>`);
   const nbAbs = p.visites.filter(v => v.statut === 'absent').length;
   const premier = p.visites[0];
   const contexte = p.salon ? `Rencontré au salon ${p.salon.nom} le ${new Date(p.cree).toLocaleDateString('fr-FR')}`
+    : p.origine === 'direct' ? frappeeLe(p)
     : premier ? `Porte frappée la 1re fois le ${new Date(premier.date).toLocaleDateString('fr-FR')}${nbAbs ? ` · ${pl(nbAbs, 'passage')} sans réponse avant` : ''}` : '';
   const precisions = [mode === 'r2' && rdv && rdv.note && `À préparer : ${rdv.note}`, p.r1 && p.r1.besoin && `Précisions : ${p.r1.besoin}`,
-    p.aRappeler && p.aRappeler.note && `Au téléphone : ${p.aRappeler.note}`, c.projet && `Projet : ${c.projet}`, c.note && `Note salon : ${c.note}`].filter(Boolean);
+    p.aRappeler && p.aRappeler.note && `Au téléphone : ${p.aRappeler.note}`, c.projet && `Projet : ${c.projet}`, c.note && `${p.salon ? 'Note salon' : 'Note'} : ${c.note}`].filter(Boolean);
   const devis = montantDevis(p);
   const argsHtml = [
     ...av.signes.map(x => `<li><span class="pastille r1"></span><span><b>${esc(court(x.q))}</b> · signé${montantSigne(x.q) ? ' ' + esc(euros(montantSigne(x.q))) : ''}${besoinsDe(x.q).length ? ' · ' + esc(texteBesoins(besoinsDe(x.q))) : ''} <span class="quand">· à ${distTxt(x.d)}</span></span></li>`),
@@ -2514,7 +2550,7 @@ function passagesBilan(periode, qui) {
   const [deb, fin] = bornesPeriode(periode), out = [];
   for (const p of portes()) p.visites.forEach((v, i) => {
     const d = new Date(v.date);
-    if (v.canal === 'salon' || d < deb || d >= fin) return;
+    if (v.canal === 'salon' || v.canal === 'direct' || d < deb || d >= fin) return;
     if (qui === 'moi' && etat.moi && cleAdresse(v.auteur) !== cleAdresse(etat.moi)) return;
     out.push({ p, v, repassage: i > 0 });
   });
@@ -2668,7 +2704,7 @@ function listesMenu() {
   const item = (id, k, a, m, conseil) => `<li><button data-p="${id}">${rond(k)}<span class="txt"><span class="a">${esc(a)}</span><span class="m">${esc(m)}</span>${conseil ? `<span class="conseil">${esc(conseil)}</span>` : ''}</span></button></li>`;
   let h = '';
   const sms = estTelPro() ? smsAEnvoyer() : [];
-  if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(p => `<li><button data-sms="${p.id}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · R1 ${esc(texteR1(p.r1))}</span><span class="m">${esc([p.r1.tel || telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}">Ne pas envoyer</button></li>`).join('')}</ul>`;
+  if (sms.length) h += `<h3>SMS de confirmation à envoyer (${sms.length})</h3><ul class="liste">${sms.map(({ p, type, rdv }) => `<li><button data-sms="${p.id}|${type}">${rond('r1')}<span class="txt"><span class="a">${esc(nomClient(p) || 'Client sans nom')} · ${type.toUpperCase()} ${esc(texteR1(rdv))}</span><span class="m">${esc([telClient(p), court(p)].filter(Boolean).join(' · '))}</span><span class="conseil">${relaisActif() ? 'Envoi automatique prévu · touche pour l’envoyer tout de suite' : 'Touche pour ouvrir le SMS'}</span></span></button><button class="lien" data-sms-non="${p.id}|${type}">Ne pas envoyer</button></li>`).join('')}</ul>`;
   const rap = aRappelerListe();
   if (rap.length) h += `<h3>À rappeler (${rap.length})</h3><ul class="liste">${rap.map(p => {
     const r = p.aRappeler, retard = r && r.date && dateRappel(r) < new Date();
@@ -2708,7 +2744,7 @@ $('#b-menu').onclick = (demande) => {
       ${listes || '<p class="vide">Rien d’urgent : aucun rappel, rendez-vous ou projet en attente. Bonne prospection !</p>'}
       ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const st = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${st.total} porte${st.total > 1 ? 's' : ''} · ${st.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
       <h3>Outils</h3>
-      <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2" id="b-salon">Démarrer un salon</button>'}<button class="b2" id="b-zone-ouvrir">Zone de chalandise</button></div>
+      <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2" id="b-salon">Démarrer un salon</button>'}<button class="b2" id="b-prospect">Nouveau prospect</button><button class="b2" id="b-zone-ouvrir">Zone de chalandise</button></div>
     </div>
 
     <div class="pile" data-panneau="bilan"${ongletMenu === 'bilan' ? '' : ' hidden'}>
@@ -2720,8 +2756,8 @@ $('#b-menu').onclick = (demande) => {
     <div class="pile" data-panneau="reglages"${ongletMenu === 'reglages' ? '' : ' hidden'}>
       <label class="champ">Ton prénom<input id="i-moi" value="${esc(etat.moi)}" placeholder="ex. Yohan" autocomplete="given-name"></label>
       <label class="champ">Ton adresse mail, pour recevoir les fiches<input id="i-mail" type="email" value="${esc(etat.email || '')}" placeholder="toi@exemple.fr" autocomplete="email" autocapitalize="off"></label>
-      <label class="coche"><input type="checkbox" id="i-pro"${estTelPro() ? ' checked' : ''}>C’est mon téléphone pro : les SMS de confirmation des R1 partent d’ici</label>
-      ${estTelPro() ? `<label class="coche"><input type="checkbox" id="i-relais"${relaisActif() ? ' checked' : ''}>Envoi automatique par le raccourci « Relais SMS », même pour les R1 pris sur un autre appareil</label>` : ''}
+      <label class="coche"><input type="checkbox" id="i-pro"${estTelPro() ? ' checked' : ''}>C’est mon téléphone pro : les SMS de confirmation des R1 et R2 partent d’ici</label>
+      ${estTelPro() ? `<label class="coche"><input type="checkbox" id="i-relais"${relaisActif() ? ' checked' : ''}>Envoi automatique par le raccourci « Relais SMS », même pour les rendez-vous pris sur un autre appareil</label>` : ''}
       <h3>Synchronisation avec le Pi</h3>
       <p class="sous" style="margin:0" id="etat-synchro">${esc(texteEtatSynchro())}</p>
       <label class="champ">Adresse du Pi<input id="sy-url" type="url" value="${esc(synchro.url)}" placeholder="https://homeassistant.xxxx.ts.net:8443" autocomplete="off" autocapitalize="off"></label>
@@ -2782,6 +2818,7 @@ $('#b-menu').onclick = (demande) => {
     if (ir) ir.onchange = e => { regleRelais(e.target.checked); dessiner(); planifierSynchro(500); toast(e.target.checked ? 'Envoi automatique activé' : 'Envoi automatique désactivé'); };
     f.querySelector('#i-mail').onchange = e => { etat.email = e.target.value.trim(); sauver(); toast('Adresse mail enregistrée'); };
     const bsa = f.querySelector('#b-salon'); if (bsa) bsa.onclick = feuilleSalon;
+    f.querySelector('#b-prospect').onclick = () => feuilleProspect(null, true);
     f.querySelector('#b-zone-ouvrir').onclick = feuilleZone;
     const bsr = f.querySelector('#b-salon-recap'); if (bsr) bsr.onclick = () => feuilleRecapSalon(salonActif().id);
     f.querySelectorAll('.pile > .liste [data-salon]').forEach(b => b.onclick = () => feuilleRecapSalon(b.dataset.salon));
@@ -2797,8 +2834,9 @@ $('#b-menu').onclick = (demande) => {
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
     f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
-    f.querySelectorAll('[data-sms]').forEach(b => b.onclick = () => { const p = etat.portes.find(x => x.id === b.dataset.sms); if (p) { envoyerSmsR1(p); $('#b-menu').onclick('jour'); } });
-    f.querySelectorAll('[data-sms-non]').forEach(b => b.onclick = () => { const p = etat.portes.find(x => x.id === b.dataset.smsNon); if (p) { ignorerSmsR1(p); $('#b-menu').onclick('jour'); } });
+    const smsDuBouton = v => { const [id, type] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? smsDe(p, type) : null; };
+    f.querySelectorAll('[data-sms]').forEach(b => b.onclick = () => { const x = smsDuBouton(b.dataset.sms); if (x) { envoyerSms(x); $('#b-menu').onclick('jour'); } });
+    f.querySelectorAll('[data-sms-non]').forEach(b => b.onclick = () => { const x = smsDuBouton(b.dataset.smsNon); if (x) { ignorerSms(x); $('#b-menu').onclick('jour'); } });
     f.querySelectorAll('.pile > .liste [data-rue]').forEach(b => b.onclick = () => feuilleRue(b.dataset.rue));
     const r = f.querySelector('#b-raz');
     r.onclick = () => {
@@ -2863,7 +2901,7 @@ function fusionner(src) {
     }
     for (const k of ['prepR1', 'prepR2']) if (p[k] && (!loc[k] || (p[k].maj || '') > (loc[k].maj || ''))) loc[k] = p[k];
     if (p.besoins && (p.besoinsMaj || '') > (loc.besoinsMaj || '')) { loc.besoins = p.besoins; loc.besoinsMaj = p.besoinsMaj; }
-    if (p.smsR1 && (!loc.smsR1 || (p.smsR1.maj || '') > (loc.smsR1.maj || ''))) loc.smsR1 = p.smsR1;
+    for (const ch of ['smsR1', 'smsR2']) if (p[ch] && (!loc[ch] || (p[ch].maj || '') > (loc[ch].maj || ''))) loc[ch] = p[ch];
     if (p.smsAnciennes) loc.smsAnciennes = [...new Set([...(loc.smsAnciennes || []), ...p.smsAnciennes])];
     if (p.aRappeler && (!loc.aRappeler || (p.aRappeler.maj || '') > (loc.aRappeler.maj || ''))) loc.aRappeler = p.aRappeler;
     const avantSuivi = (loc.suivi || []).length, cleE = e => `${e.date}|${e.etape}|${cleAdresse(e.auteur)}`;
