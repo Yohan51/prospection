@@ -1806,6 +1806,153 @@ async function fichiersPhotos(p) {
   }
   return out;
 }
+/* ───────── Fiche prospect en PDF ─────────
+   Générée dans le navigateur, sans bibliothèque ni connexion : texte en Helvetica (accents français
+   via WinAnsi), photos JPEG intégrées telles quelles. Le contenu reprend texteFiche(), pour que le PDF
+   et le mail disent toujours la même chose. */
+const PDF_LARG = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+const PDF_WINANSI = { '€': 0x80, '‚': 0x82, '„': 0x84, '…': 0x85, 'Œ': 0x8C, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, 'œ': 0x9C, 'Ÿ': 0x9F };
+function pdfOctets(s) {   // texte → octets WinAnsi (espaces insécables → espace, caractères hors table → ignorés)
+  const out = [];
+  for (const ch of String(s).replace(/[   ]/g, ' ')) {
+    const c = ch.codePointAt(0);
+    if (PDF_WINANSI[ch]) out.push(PDF_WINANSI[ch]);
+    else if (c >= 32 && c < 127) out.push(c);
+    else if (c >= 160 && c < 256) out.push(c);
+  }
+  return out;
+}
+const pdfChaine = s => '(' + pdfOctets(s).map(c => c === 40 || c === 41 || c === 92 ? '\\' + String.fromCharCode(c) : c < 127 ? String.fromCharCode(c) : '\\' + c.toString(8).padStart(3, '0')).join('') + ')';
+function pdfLargeur(s, taille, gras) {
+  let w = 0;
+  for (const c of pdfOctets(s)) {
+    const base = c < 127 ? c : String.fromCharCode(c).normalize('NFD').charCodeAt(0);
+    w += base >= 32 && base < 127 ? PDF_LARG[base - 32] : 556;
+  }
+  return w * taille / 1000 * (gras ? 1.07 : 1);
+}
+function pdfCouper(s, taille, max, gras) {
+  const lignes = [];
+  for (const par of String(s).split('\n')) {
+    let cur = '';
+    for (const mot of par.split(/ +/)) {
+      const essai = cur ? cur + ' ' + mot : mot;
+      if (pdfLargeur(essai, taille, gras) <= max) { cur = essai; continue; }
+      if (cur) lignes.push(cur);
+      cur = mot;
+      while (pdfLargeur(cur, taille, gras) > max) {   // mot trop long (lien) : coupe au caractère
+        let i = cur.length; while (i > 1 && pdfLargeur(cur.slice(0, i), taille, gras) > max) i--;
+        lignes.push(cur.slice(0, i)); cur = cur.slice(i);
+      }
+    }
+    lignes.push(cur);
+  }
+  return lignes;
+}
+function jpegInfos(o) {   // largeur, hauteur et nombre de composantes d'un JPEG
+  let i = 2;
+  while (i + 9 < o.length) {
+    if (o[i] !== 0xFF) { i++; continue; }
+    const m = o[i + 1], n = (o[i + 2] << 8) | o[i + 3];
+    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC)
+      return { h: (o[i + 5] << 8) | o[i + 6], w: (o[i + 7] << 8) | o[i + 8], comp: o[i + 9] };
+    i += 2 + n;
+  }
+  return null;
+}
+function pdfFiche(p, photos) {
+  const W = 595.28, H = 841.89, M = 48, BLEU = '0.106 0.2 0.333', GRIS = '0.42 0.45 0.5', NOIR = '0.12 0.14 0.18';
+  const pages = []; let ops, y;
+  const page = () => { ops = []; pages.push(ops); y = H - M; };
+  const texte = (x, yy, s, taille, gras, couleur) => ops.push(`BT /${gras ? 'F2' : 'F1'} ${taille} Tf ${couleur || NOIR} rg ${x.toFixed(2)} ${yy.toFixed(2)} Td ${pdfChaine(s)} Tj ET`);
+  const place = h => { if (y - h < M + 20) page(); };
+  const L = texteFiche(p).split('\n');
+  page();
+  // Bandeau
+  ops.push(`${BLEU} rg 0 ${H - 92} ${W} 92 re f`);
+  texte(M, H - 46, 'FICHE PROSPECT', 20, true, '1 1 1');
+  texte(M, H - 68, `SUBLIME TOIT${p.salon ? ' · Salon ' + p.salon.nom : ''}`, 10, false, '0.85 0.89 0.95');
+  y = H - 92 - 34;
+  // Nom en grand
+  const c = p.contact || {}, nom = c.nom || nomClient(p) || 'Client sans nom';
+  for (const l of pdfCouper(nom, 18, W - 2 * M, true)) { texte(M, y, l, 18, true); y -= 22; }
+  for (const l of pdfCouper(L[1] || '', 10, W - 2 * M)) { texte(M, y, l, 10, false, GRIS); y -= 14; }
+  y -= 10; ops.push(`0.85 0.87 0.9 RG 0.8 w ${M} ${y} m ${W - M} ${y} l S`); y -= 22;
+  // Rubriques « Libellé : valeur »
+  const COL = 132, LV = W - 2 * M - COL;
+  for (const ligne of L.slice(2)) {
+    const i = ligne.indexOf(' : '); if (i < 0) continue;
+    const lib = ligne.slice(0, i), val = ligne.slice(i + 3);
+    if (lib === 'Nom' || lib === 'Photos') continue;   // déjà en titre / photos intégrées plus bas
+    const lignes = pdfCouper(val, 11, LV);
+    place(lignes.length * 15 + 8);
+    texte(M, y, lib, 9.5, true, GRIS);
+    lignes.forEach((l, k) => texte(M + COL, y - k * 15, l, 11, false));
+    y -= lignes.length * 15 + 9;
+  }
+  // Photos, deux par ligne
+  const imgs = [];
+  if (photos.length) {
+    place(40); y -= 8; texte(M, y, `PHOTOS (${photos.length})`, 9.5, true, GRIS); y -= 14;
+    const larg = (W - 2 * M - 16) / 2, maxH = 230;
+    let col = 0, hautLigne = 0;
+    for (const ph of photos) {
+      const k = Math.min(larg / ph.w, maxH / ph.h), w = ph.w * k, h = ph.h * k;
+      if (col === 0) { place(h + 10); hautLigne = 0; }
+      const nomImg = `Im${imgs.length + 1}`; imgs.push(Object.assign({ nom: nomImg }, ph));
+      ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${(M + col * (larg + 16)).toFixed(2)} ${(y - h).toFixed(2)} cm /${nomImg} Do Q`);
+      hautLigne = Math.max(hautLigne, h);
+      col = 1 - col; if (col === 0) y -= hautLigne + 14;
+    }
+    if (col === 1) y -= hautLigne + 14;
+  }
+  // Pied de page sur chaque page
+  const le = new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  pages.forEach((o, n) => { ops = o; texte(M, 28, `Fiche générée le ${le} · page ${n + 1}/${pages.length}`, 8, false, GRIS); });
+  return assemblerPdf(pages, imgs, W, H);
+}
+function assemblerPdf(pages, imgs, W, H) {
+  const enc = new TextEncoder(), parts = [], offsets = [];
+  let taille = 0;
+  const ecrire = x => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); taille += b.length; };
+  const nbObj = 4 + imgs.length + pages.length * 2;
+  const obj = (n, corps) => { offsets[n] = taille; ecrire(`${n} 0 obj\n`); (Array.isArray(corps) ? corps : [corps]).forEach(ecrire); ecrire('\nendobj\n'); };
+  ecrire('%PDF-1.4\n');
+  const premierePage = 5 + imgs.length;
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, `<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${premierePage + i * 2} 0 R`).join(' ')}] >>`);
+  obj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  imgs.forEach((im, i) => obj(5 + i, [`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /${im.comp === 1 ? 'DeviceGray' : im.comp === 4 ? 'DeviceCMYK' : 'DeviceRGB'} /BitsPerComponent 8 /Filter /DCTDecode${im.comp === 4 ? ' /Decode [1 0 1 0 1 0 1 0]' : ''} /Length ${im.octets.length} >>\nstream\n`, im.octets, '\nendstream']));
+  const ressImg = imgs.length ? ` /XObject << ${imgs.map((im, i) => `/${im.nom} ${5 + i} 0 R`).join(' ')} >>` : '';
+  pages.forEach((o, i) => {
+    const n = premierePage + i * 2, contenu = o.join('\n');
+    obj(n, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${ressImg} >> /Contents ${n + 1} 0 R >>`);
+    obj(n + 1, `<< /Length ${enc.encode(contenu).length} >>\nstream\n${contenu}\nendstream`);
+  });
+  const xref = taille;
+  ecrire(`xref\n0 ${nbObj + 1}\n0000000000 65535 f \n${offsets.slice(1).map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}`);
+  ecrire(`trailer\n<< /Size ${nbObj + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
+}
+async function fichierPdfFiche(p) {
+  const photos = [];
+  for (const x of photosDe(p)) {
+    const r = await photosDB.lire(x.id).catch(() => null);
+    if (!r || !r.blob) continue;
+    const octets = new Uint8Array(await r.blob.arrayBuffer()), inf = octets[0] === 0xFF && octets[1] === 0xD8 ? jpegInfos(octets) : null;
+    if (inf && inf.w && inf.h) photos.push(Object.assign({ octets }, inf));
+  }
+  return new File([pdfFiche(p, photos)], `Fiche-${cleAdresse(sujetFiche(p)).replace(/ /g, '-').slice(0, 50) || 'prospect'}.pdf`, { type: 'application/pdf' });
+}
+async function partagerPdfFiche(p) {
+  try {
+    const f = await fichierPdfFiche(p);
+    if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: sujetFiche(p) });
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000); }
+    p.ficheEnvoyee = maintenant(); sauver();
+  } catch (e) { if (e && e.name !== 'AbortError') toast('PDF impossible : ' + e.message); }
+}
 function feuilleFiche(p, enchainer) {
   const texte = texteFiche(p), enSalon = enchainer && salonActif();
   ouvrirFeuille(`<div class="entete"><h2 id="f-titre">Fiche prospect</h2>${BTN_FERMER}</div>
@@ -1813,10 +1960,12 @@ function feuilleFiche(p, enchainer) {
     <div class="pile">
       <pre class="fiche">${esc(texte)}</pre>
       <a class="b2 jaune" id="fi-mail" href="${esc(lienMail(sujetFiche(p), texte))}" style="justify-content:center;min-height:52px">M’envoyer la fiche par mail</a>
+      <button class="b2" id="fi-pdf" style="justify-content:center">Fiche en PDF${photosDe(p).length ? ' (avec les photos)' : ''}…</button>
       <div class="ligne-btns"><button class="b2" id="fi-partage">Partager${photosDe(p).length ? ' avec les photos' : ''}…</button>
         ${enSalon ? '<button class="b2 plein" id="fi-suivant">Prospect suivant →</button>' : `<button class="b2" id="fi-porte">Voir le prospect</button>`}</div>
     </div>`, f => {
     f.querySelector('#fi-mail').onclick = () => { p.ficheEnvoyee = maintenant(); sauver(); };
+    f.querySelector('#fi-pdf').onclick = () => partagerPdfFiche(p);
     f.querySelector('#fi-partage').onclick = async () => { await partagerTexte(sujetFiche(p), texte, await fichiersPhotos(p)); p.ficheEnvoyee = maintenant(); sauver(); };
     const s = f.querySelector('#fi-suivant'); if (s) s.onclick = () => feuilleProspect(null);
     const o = f.querySelector('#fi-porte'); if (o) o.onclick = () => ouvrirPorte(p.id);
