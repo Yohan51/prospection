@@ -879,15 +879,15 @@ function texteSms(x) {
     const nom = nomClient(p), adr = adresseRdv(p).replace(/\s+/g, ' ').trim();
     const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
     const quandRdv = jourCle(d) === jourCle(new Date()) ? 'aujourd’hui' : 'demain ' + d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    return `Bonjour${nom ? ' ' + nom : ''}, petit rappel : nous avons rendez-vous ${quandRdv} à ${heure}${adr ? ' au ' + adr : ''}. En cas d’empêchement, n’hésitez pas à me prévenir à ce numéro. À bientôt, ${SIGNATURE_SMS}`;
+    return `Bonjour${nom ? ' ' + nom : ''}, petit rappel : nous avons rendez-vous ${quandRdv} à ${heure}${adr ? ' au ' + adr : ''}. Merci de répondre à ce SMS pour me confirmer votre présence. À bientôt, ${SIGNATURE_SMS}`;
   }
   const nom = nomClient(p);
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const heure = `${d.getHours()}h${d.getMinutes() ? pad(d.getMinutes()) : ''}`;
   const adr = adresseRdv(p).replace(/\s+/g, ' ').trim();
   const lieu = adr ? ' au ' + adr : '';
-  if (x.type === 'r2') return `Bonjour${nom ? ' ' + nom : ''}, suite à notre premier échange, je vous confirme notre second rendez-vous du ${jour} à ${heure}${lieu}, pour vous présenter notre proposition. À bientôt, ${SIGNATURE_SMS}`;
-  return `Bonjour${nom ? ' ' + nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${lieu}. À bientôt, ${SIGNATURE_SMS}`;
+  if (x.type === 'r2') return `Bonjour${nom ? ' ' + nom : ''}, suite à notre premier échange, je vous confirme notre second rendez-vous du ${jour} à ${heure}${lieu}, pour vous présenter notre proposition. Merci de répondre à ce SMS pour me confirmer votre présence. À bientôt, ${SIGNATURE_SMS}`;
+  return `Bonjour${nom ? ' ' + nom : ''}, je vous confirme notre rendez-vous du ${jour} à ${heure}${lieu}. Merci de répondre à ce SMS pour me confirmer votre présence. À bientôt, ${SIGNATURE_SMS}`;
 }
 // État de la confirmation : 'envoye', 'ignore', 'attente' (à envoyer) ou '' (pas concerné)
 function etatSms(x) {
