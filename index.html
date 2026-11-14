@@ -910,7 +910,7 @@ function etatSms(x) {
 function relaisActif() { const r = etat.relaisSms && etat.relaisSms[cleMoi()]; return !!(r && r.actif); }
 function regleRelais(actif) { etat.relaisSms = Object.assign({}, etat.relaisSms, { [cleMoi()]: { actif, maj: maintenant() } }); sauver(); }
 function smsPourRelais() {
-  return relaisActif() ? smsAEnvoyer().map(x => ({ k: cleSms(x), tel: telR1(x.p), texte: texteSms(x), rdv: `${x.rdv.date} ${x.rdv.heure || '18:00'}` })) : [];
+  return relaisActif() ? smsAEnvoyer().map(x => ({ k: cleSms(x), tel: telR1(x.p), texte: texteSms(x), rdv: `${x.rdv.date} ${x.rdv.heure || '18:00'}`, fin: dateR1(x.rdv).toISOString() })) : [];
 }
 function smsFaitsTexte() {
   const out = [];
@@ -919,6 +919,8 @@ function smsFaitsTexte() {
     for (const c of p.smsAnciennes || []) out.push(`${p.id}|${c}`);
     for (const c of p.smsAnciennes || []) out.push(`${p.id}|rappel|${c}`);
     if (p.supprime || etapeDe(p) === 'perdu') for (const x of [...rdvsSms(p), ...rappelsSms(p)]) out.push(cleSms(x));
+    // Rendez-vous passés (ou dans moins d'une heure) : plus aucun SMS, même si un appareil pas resynchronisé le réclame encore
+    else for (const x of [...rdvsSms(p), ...rappelsSms(p)]) if (+dateR1(x.rdv) < Date.now() + 3600e3) out.push(cleSms(x));
   }
   return out.join('\n');
 }

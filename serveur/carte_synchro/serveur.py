@@ -6,6 +6,7 @@ par un autre appareil. Les photos sont stockées une fois, par identifiant.
 """
 import hashlib, hmac, json, os, re, time
 import matin
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DATA = os.environ.get('CARTE_DATA', '/data')
@@ -25,6 +26,27 @@ def code_equipe():
             return str(json.load(f).get('code_equipe') or '')
     except (OSError, ValueError):
         return os.environ.get('CARTE_CODE', '')
+
+
+def sans_sms_passes(etat):
+    """Retire des listes « SMS à envoyer » les rendez-vous passés ou à moins d'une heure."""
+    items = etat.get('smsAFaire') if isinstance(etat, dict) else None
+    if not isinstance(items, list):
+        return etat
+    limite = time.time() + 3600
+    garder = []
+    for it in items:
+        try:
+            if it.get('fin'):
+                t = datetime.fromisoformat(it['fin'].replace('Z', '+00:00')).timestamp()
+            else:
+                t = datetime.strptime(it['rdv'], '%Y-%m-%d %H:%M').replace(tzinfo=timezone.utc).timestamp() - 2 * 3600
+        except (KeyError, ValueError, TypeError, AttributeError):
+            continue
+        if t > limite:
+            garder.append(it)
+    etat['smsAFaire'] = garder
+    return etat
 
 
 def ecrire(chemin, contenu):
@@ -114,7 +136,7 @@ class Gestion(BaseHTTPRequestHandler):
         if chemin == '/etats':
             sauf = dict(p.split('=', 1) for p in requete.split('&') if '=' in p).get('sauf', '')
             fichiers = sorted(f for f in os.listdir(ETATS) if f.endswith('.json') and f[:-5] != sauf)
-            empreinte = hashlib.sha1('|'.join(
+            empreinte = hashlib.sha1(('%d|' % (time.time() // 900)).encode() + '|'.join(
                 '%s:%d:%d' % (f, os.path.getmtime(os.path.join(ETATS, f)) * 1000, os.path.getsize(os.path.join(ETATS, f)))
                 for f in fichiers).encode()).hexdigest()
             etag = '"%s"' % empreinte
@@ -124,7 +146,7 @@ class Gestion(BaseHTTPRequestHandler):
             for f in fichiers:
                 try:
                     with open(os.path.join(ETATS, f), encoding='utf-8') as fh:
-                        appareils.append({'id': f[:-5], 'etat': json.load(fh)})
+                        appareils.append({'id': f[:-5], 'etat': sans_sms_passes(json.load(fh))})
                 except (OSError, ValueError):
                     pass
             return self.repondre(200, {'appareils': appareils}, autres={'ETag': etag})

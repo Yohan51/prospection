@@ -38,5 +38,6 @@ Aucun secret ici : le **code d'équipe** et le **jeton Telegram** sont dans les 
 
 ## Historique
 
+- **1.5.0** (14 nov. 2026) : `GET /etats` retire des listes « SMS à envoyer » les rendez-vous passés ou à moins d’une heure (évite des confirmations envoyées après coup par un appareil pas resynchronisé).
 - **1.4.0** (9 nov. 2026) : `DELETE /etats/anciens?jours=N` pour supprimer les appareils inactifs (le relais SMS est toujours conservé) ; CORS autorise `DELETE`.
 - **1.3.0** : version d'origine (synchro, photos, message du matin).
