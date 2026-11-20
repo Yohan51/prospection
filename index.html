@@ -295,6 +295,12 @@ body.secteurs .leaflet-marker-icon { pointer-events: none; }
 /* Bilan détaillé (menu) */
 .bilan { display: flex; flex-direction: column; gap: 12px; }
 .bilan .chiffres span { line-height: 1.15; display: block; margin-top: 3px; }
+.objectif .jauge { position: relative; height: 14px; border-radius: 7px; background: var(--trait); margin: 2px 0; display: block; }
+.objectif .jauge i { position: absolute; inset: 0 auto 0 0; border-radius: 7px; background: var(--st-r1); min-width: 4px; }
+.objectif .jauge i.retard { background: #e08a1e; }
+.objectif .jauge i.atteint { background: var(--st-r1); box-shadow: 0 0 0 2px rgba(46, 158, 92, .25); }
+.objectif .jauge em { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ardoise); border-radius: 1px; }
+.objectif b.ok { color: var(--st-r1); } .objectif b.retard { color: var(--st-stop); }
 .barre { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--trait); gap: 2px; }
 .barre i { display: block; min-width: 4px; }
 .repartition { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; }
@@ -2124,7 +2130,7 @@ function etatPourEnvoi(avecPhotos) {
   return { app: 'carte-prospection', version: 1, par: etat.moi, appareil: nomAppareil(), exporteLe: maintenant(), chantiers: etat.chantiers,
     portes: avecPhotos ? etat.portes : etat.portes.map(p => Object.assign({}, p, { photos: undefined })),
     rues: etat.rues || {}, besoinsListe: etat.besoinsListe || null, besoinsListeMaj: etat.besoinsListeMaj || '', salons: salons(),
-    relaisSms: etat.relaisSms || {}, smsAFaire: smsPourRelais(), smsFaits: smsFaitsTexte() };
+    relaisSms: etat.relaisSms || {}, objectifs: etat.objectifs || {}, smsAFaire: smsPourRelais(), smsFaits: smsFaitsTexte() };
 }
 async function appelPi(chemin, opts = {}) {
   const base = synchro.url.replace(/\/+$/, '');
@@ -2895,6 +2901,9 @@ function afficherBilan(zone) {
 function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
 
 /* ───────── Ventes : devis en cours et signatures, au même endroit ───────── */
+// Objectif mensuel de chiffre signé, par commercial (synchronisé entre ses appareils)
+const objectifDe = qui => { const o = etat.objectifs && etat.objectifs[cleAdresse(qui)]; return o && o.montant > 0 ? o.montant : 0; };
+function regleObjectif(montant) { etat.objectifs = Object.assign({}, etat.objectifs, { [cleMoi()]: { montant, maj: maintenant() } }); sauver(); planifierSynchro(500); }
 let quiVentes = 'moi';
 try { quiVentes = localStorage.getItem(CLE + ':ventes-qui') || 'moi'; } catch (e) {}
 function htmlVentes() {
@@ -2922,6 +2931,26 @@ function htmlVentes() {
   const perdusAn = l.filter(x => x.et === 'perdu' && niveauAtteint(x.p) >= 2 && new Date(derniereEtape(x.p, 'perdu').date) >= debAn);
 
   let h = plusieurs ? `<div class="puces" style="margin-bottom:2px">${[['moi', 'Mes ventes'], ['tous', 'Toute l’équipe']].map(([k, t]) => `<button class="puce" data-qv="${k}" aria-pressed="${qui === k}">${t}</button>`).join('')}</div>` : '';
+  // Objectif du mois (le sien, ou la somme de l'équipe)
+  const gens = qui === 'tous' && plusieurs ? [...new Set(tout.map(x => x.auteur).filter(Boolean))] : [etat.moi];
+  const objectif = gens.reduce((t, g) => t + objectifDe(g), 0), signeMois = somme(sMois, montantS);
+  const nomMois = maintenantD.toLocaleDateString('fr-FR', { month: 'long' });
+  if (objectif) {
+    const pctObj = Math.round(100 * signeMois / objectif), reste = Math.max(0, objectif - signeMois);
+    const finMois = new Date(maintenantD.getFullYear(), maintenantD.getMonth() + 1, 0), joursRestants = finMois.getDate() - maintenantD.getDate();
+    const attendu = objectif * maintenantD.getDate() / finMois.getDate(), enAvance = signeMois >= attendu;
+    const pipeTotal = somme(pipe, montantD);
+    h += `<div class="taux objectif">
+      <div><span>Objectif de ${esc(nomMois)}</span><b>${esc(mt(objectif))}</b></div>
+      <div class="jauge" role="img" aria-label="${pctObj} % de l’objectif"><i style="width:${Math.min(100, pctObj)}%" class="${pctObj >= 100 ? 'atteint' : enAvance ? '' : 'retard'}"></i><em style="left:${Math.min(100, 100 * attendu / objectif)}%"></em></div>
+      <div><span>${pctObj >= 100 ? 'Objectif atteint 🎉' : `${pctObj} % · reste ${esc(mt(reste))} à signer`}</span><b>${pl(joursRestants, 'jour')}</b></div>
+      ${pctObj < 100 ? `<div><span>${enAvance ? 'En avance sur le rythme du mois' : `Rythme du mois : ${esc(mt(attendu))} attendus à ce jour`}</span><b class="${enAvance ? 'ok' : 'retard'}">${enAvance ? '✓' : '–' + esc(mt(attendu - signeMois))}</b></div>` : ''}
+      ${pctObj < 100 && pipeTotal ? `<div><span>Devis en cours pour combler l’écart</span><b>${esc(mt(pipeTotal))}${pipeTotal >= reste ? ' ✓' : ''}</b></div>` : ''}
+    </div>`;
+  }
+  if (!(qui === 'tous' && plusieurs)) h += `<div class="ligne-btns" id="obj-zone">${objectif
+    ? '<button class="lien" id="obj-modif">Modifier l’objectif mensuel</button>'
+    : '<button class="b2" id="obj-modif" style="justify-content:center">Fixer un objectif mensuel</button>'}</div>`;
   h += `<div class="chiffres" style="grid-template-columns:1fr 1fr">
     <div><b>${mt(somme(pipe, montantD))}</b><span>${pipe.length} devis en cours</span></div>
     <div><b>${mt(somme(sMois, montantS))}</b><span>${pl(sMois.length, 'signature')} ce mois-ci</span></div>
@@ -3124,6 +3153,15 @@ $('#b-menu').onclick = (demande) => {
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+    const om = f.querySelector('#obj-modif');
+    if (om) om.onclick = () => {
+      const z = f.querySelector('#obj-zone'), actuel = objectifDe(etat.moi);
+      z.innerHTML = `<label class="champ" style="flex:1">Objectif de signé par mois (TTC)<input id="obj-val" inputmode="decimal" value="${actuel || ''}" placeholder="ex. 40 000" autocomplete="off"></label>
+        <button class="b2 plein" id="obj-ok">Enregistrer</button>${actuel ? '<button class="lien" id="obj-sup">Retirer</button>' : ''}`;
+      z.style.alignItems = 'flex-end'; z.querySelector('#obj-val').focus();
+      z.querySelector('#obj-ok').onclick = () => { regleObjectif(lireMontant(z.querySelector('#obj-val').value)); $('#b-menu').onclick('ventes'); };
+      const sup = z.querySelector('#obj-sup'); if (sup) sup.onclick = () => { regleObjectif(0); $('#b-menu').onclick('ventes'); };
+    };
     f.querySelectorAll('[data-qv]').forEach(b => b.onclick = () => { quiVentes = b.dataset.qv; try { localStorage.setItem(CLE + ':ventes-qui', quiVentes); } catch (e) {} $('#b-menu').onclick('ventes'); });
     f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
     const smsDuBouton = v => { const [id, type, rappel] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? trouverSms(p, type, !!rappel) : null; };
@@ -3202,6 +3240,10 @@ function fusionner(src) {
     if (loc.suivi) loc.suivi.sort((a, b) => a.date < b.date ? -1 : 1);
     if (p.maj > loc.maj) { loc.supprime = !!p.supprime; loc.maj = p.maj; }
     if (loc.visites.length !== avant || !!loc.supprime !== etaitSupprime || (loc.suivi || []).length !== avantSuivi || photosChangees) majs++;
+  }
+  for (const [k, o] of Object.entries(src.objectifs || {})) {
+    const l = etat.objectifs && etat.objectifs[k];
+    if (!l || (o.maj || '') > (l.maj || '')) etat.objectifs = Object.assign({}, etat.objectifs, { [k]: o });
   }
   for (const [k, r] of Object.entries(src.relaisSms || {})) {
     const l = etat.relaisSms && etat.relaisSms[k];
