@@ -225,9 +225,9 @@ body.en-salon #b-ici { font-size: 17px; line-height: 1.05; }
 textarea { font: inherit; }
 
 /* Menu en onglets */
-.onglets { position: sticky; top: -8px; z-index: 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 12px 0 0; padding: 4px;
+.onglets { position: sticky; top: -8px; z-index: 3; display: grid; grid-template-columns: repeat(4, auto); justify-content: stretch; gap: 2px; margin: 12px 0 0; padding: 4px;
   background: var(--trait); border-radius: 12px; }
-.onglets button { border: 0; border-radius: 9px; padding: 9px 4px; background: none; color: var(--ardoise-2); font: 600 16px/1.1 var(--f-titre); letter-spacing: .02em;
+.onglets button { border: 0; border-radius: 9px; padding: 9px 2px; background: none; color: var(--ardoise-2); font: 600 15px/1.1 var(--f-titre); white-space: nowrap; letter-spacing: .02em;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .onglets button[aria-selected="true"] { background: var(--surface); color: var(--ardoise); box-shadow: 0 1px 4px rgba(16, 38, 70, .15); }
 .onglets .badge { background: var(--st-stop); font-size: 12px; line-height: 16px; min-width: 18px; }
@@ -2894,6 +2894,80 @@ function afficherBilan(zone) {
 }
 function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
 
+/* ───────── Ventes : devis en cours et signatures, au même endroit ───────── */
+let quiVentes = 'moi';
+try { quiVentes = localStorage.getItem(CLE + ':ventes-qui') || 'moi'; } catch (e) {}
+function htmlVentes() {
+  const auteurDe = (p, e) => (e && e.auteur) || p.auteur || '';
+  const tout = portes().map(p => {
+    const et = etapeDe(p), d = derniereEtape(p, 'devis'), s = et === 'signe' ? derniereEtape(p, 'signe') : null;
+    return { p, et, devis: d, signe: s, auteur: auteurDe(p, s || d || suiviDe(p).slice(-1)[0]) };
+  }).filter(x => x.et);
+  const plusieurs = new Set(tout.map(x => cleAdresse(x.auteur)).filter(Boolean)).size > 1;
+  const qui = plusieurs ? quiVentes : 'tous';
+  const l = qui === 'moi' && etat.moi ? tout.filter(x => cleAdresse(x.auteur) === cleAdresse(etat.moi)) : tout;
+  const maintenantD = new Date(), debMois = new Date(maintenantD.getFullYear(), maintenantD.getMonth(), 1), debAn = new Date(maintenantD.getFullYear(), 0, 1);
+  const somme = (a, f) => a.reduce((t, x) => t + (f(x) || 0), 0);
+  const jours = d => Math.floor((Date.now() - new Date(d)) / 864e5);
+  const mt = n => euros(n) || '0 €';
+
+  const pipe = l.filter(x => x.et === 'devis').sort((a, b) => (a.devis.date || '') < (b.devis.date || '') ? -1 : 1);
+  const aChiffrer = l.filter(x => x.et === 'r2');
+  const signes = l.filter(x => x.signe).sort((a, b) => (a.signe.date || '') < (b.signe.date || '') ? 1 : -1);
+  const sMois = signes.filter(x => new Date(x.signe.date) >= debMois), sAn = signes.filter(x => new Date(x.signe.date) >= debAn);
+  const montantS = x => x.signe.montant, montantD = x => x.devis.montant;
+  const issus = l.filter(x => niveauAtteint(x.p) >= 2 && (x.et === 'signe' || x.et === 'perdu'));   // devis arrivés au bout
+  const gagnes = issus.filter(x => x.et === 'signe');
+  const delais = signes.filter(x => x.devis && new Date(x.devis.date) <= new Date(x.signe.date)).map(x => (new Date(x.signe.date) - new Date(x.devis.date)) / 864e5);
+  const perdusAn = l.filter(x => x.et === 'perdu' && niveauAtteint(x.p) >= 2 && new Date(derniereEtape(x.p, 'perdu').date) >= debAn);
+
+  let h = plusieurs ? `<div class="puces" style="margin-bottom:2px">${[['moi', 'Mes ventes'], ['tous', 'Toute l’équipe']].map(([k, t]) => `<button class="puce" data-qv="${k}" aria-pressed="${qui === k}">${t}</button>`).join('')}</div>` : '';
+  h += `<div class="chiffres" style="grid-template-columns:1fr 1fr">
+    <div><b>${mt(somme(pipe, montantD))}</b><span>${pipe.length} devis en cours</span></div>
+    <div><b>${mt(somme(sMois, montantS))}</b><span>${pl(sMois.length, 'signature')} ce mois-ci</span></div>
+    <div><b>${mt(somme(sAn, montantS))}</b><span>signés en ${maintenantD.getFullYear()}</span></div>
+    <div><b>${issus.length ? Math.round(100 * gagnes.length / issus.length) + ' %' : '–'}</b><span>devis transformés</span></div>
+  </div>
+  <div class="taux">
+    ${sAn.length ? `<div><span>Panier moyen ${maintenantD.getFullYear()}</span><b>${mt(somme(sAn, montantS) / sAn.length)}</b></div>` : ''}
+    ${delais.length ? `<div><span>Délai moyen devis → signature</span><b>${pl(Math.round(delais.reduce((a, b) => a + b, 0) / delais.length), 'jour')}</b></div>` : ''}
+    ${issus.length ? `<div><span>Devis signés / perdus</span><b>${gagnes.length} / ${issus.length - gagnes.length}</b></div>` : ''}
+    ${perdusAn.length ? `<div><span>Devis perdus en ${maintenantD.getFullYear()}</span><b>${perdusAn.length} · ${mt(somme(perdusAn, x => x.devis && x.devis.montant))}</b></div>` : ''}
+    ${aChiffrer.length ? `<div><span>R2 en cours (devis à faire)</span><b>${aChiffrer.length}</b></div>` : ''}
+  </div>`;
+
+  // Devis dans le pipe : du plus ancien au plus récent
+  h += `<h3>Devis en cours (${pipe.length})</h3>`;
+  h += pipe.length ? `<ul class="liste">${pipe.map(x => {
+    const j = jours(x.devis.date);
+    return `<li><button data-p="${x.p.id}"><span class="pastille r1" style="width:14px;height:14px;border-radius:50%;flex:none"></span><span class="txt">
+      <span class="a">${esc(nomClient(x.p) || 'Client sans nom')} · ${esc(euros(x.devis.montant) || 'montant ?')}</span>
+      <span class="m">${esc([court(x.p), 'envoyé ' + quand(x.devis.date)].filter(Boolean).join(' · '))}${plusieurs && qui === 'tous' && x.auteur ? ' · ' + esc(x.auteur) : ''}</span>
+      ${j >= 7 ? `<span class="conseil">À relancer : ${pl(j, 'jour')} sans nouvelles</span>` : ''}</span></button></li>`;
+  }).join('')}</ul>` : '<p class="vide">Aucun devis en attente. Quand tu en envoies un, passe la fiche à « Devis envoyé » avec son montant.</p>';
+
+  // Signatures des 6 derniers mois
+  const mois = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(maintenantD.getFullYear(), maintenantD.getMonth() - i, 1), f = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const ls = signes.filter(x => { const t = new Date(x.signe.date); return t >= d && t < f; });
+    mois.push({ nom: d.toLocaleDateString('fr-FR', { month: 'short' }), n: ls.length, ca: somme(ls, montantS) });
+  }
+  const maxCa = Math.max(...mois.map(m => m.ca), 1);
+  if (signes.length) h += `<h3>Signé par mois</h3><div class="entonnoir">${mois.map(m => `<div style="grid-template-columns:44px 1fr 96px"><span>${esc(m.nom)}</span><em style="width:${m.ca ? Math.max(3, 100 * m.ca / maxCa) : 0}%${m.ca ? '' : ';min-width:0'}"></em><b>${m.ca ? esc(euros(m.ca)) : '–'}${m.n ? ` <small style="color:var(--doux);font-weight:400">(${m.n})</small>` : ''}</b></div>`).join('')}</div>`;
+
+  // Signés : les plus récents d'abord, groupés par mois
+  h += `<h3>Signés (${signes.length})</h3>`;
+  if (!signes.length) h += '<p class="vide">Pas encore de signature enregistrée. Passe la fiche à « Signé » avec le montant pour la voir ici.</p>';
+  for (const [, ls] of grouper(signes.slice(0, 60), x => x.signe.date.slice(0, 7))) {
+    h += `<p class="journal-jour">${esc(new Date(ls[0].signe.date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))} · ${pl(ls.length, 'signature')} · ${esc(mt(somme(ls, montantS)))}</p>
+      <ul class="liste">${ls.map(x => `<li><button data-p="${x.p.id}"><span class="pastille r1" style="width:14px;height:14px;border-radius:50%;flex:none;background:var(--st-r1)"></span><span class="txt">
+        <span class="a">${esc(nomClient(x.p) || 'Client sans nom')} · ${esc(euros(x.signe.montant) || 'montant ?')}</span>
+        <span class="m">${esc([court(x.p), 'signé le ' + new Date(x.signe.date).toLocaleDateString('fr-FR')].filter(Boolean).join(' · '))}${besoinsDe(x.p).length ? ' · ' + esc(texteBesoins(besoinsDe(x.p))) : ''}${plusieurs && qui === 'tous' && x.auteur ? ' · ' + esc(x.auteur) : ''}</span></span></button></li>`).join('')}</ul>`;
+  }
+  return h;
+}
+
 /* ───────── Menu : prénom, partage, sauvegarde ───────── */
 function listesMenu() {
   const rond = k => `<span class="pastille ${k}" style="width:14px;height:14px;border-radius:50%;flex:none"></span>`;
@@ -2922,7 +2996,7 @@ function listesMenu() {
   return h;
 }
 $('#b-jour').onclick = () => $('#b-menu').onclick('bilan');
-const ONGLETS = { jour: 'Aujourd’hui', bilan: 'Bilan', reglages: 'Réglages' };
+const ONGLETS = { jour: 'Aujourd’hui', ventes: 'Ventes', bilan: 'Bilan', reglages: 'Réglages' };
 let ongletMenu = 'jour';
 try { ongletMenu = localStorage.getItem(CLE + ':onglet') || 'jour'; } catch (e) {}
 $('#b-menu').onclick = (demande) => {
@@ -2943,6 +3017,8 @@ $('#b-menu').onclick = (demande) => {
       <h3>Outils</h3>
       <div class="ligne-btns">${salonActif() ? `<button class="b2 plein" id="b-salon-recap">Salon en cours : ${esc(salonActif().nom)}</button>` : '<button class="b2" id="b-salon">Démarrer un salon</button>'}<button class="b2" id="b-prospect">Nouveau prospect</button><button class="b2" id="b-zone-ouvrir">Zone de chalandise</button></div>
     </div>
+
+    <div class="pile bilan" data-panneau="ventes"${ongletMenu === 'ventes' ? '' : ' hidden'}>${htmlVentes()}</div>
 
     <div class="pile" data-panneau="bilan"${ongletMenu === 'bilan' ? '' : ' hidden'}>
       <div id="bilan" class="bilan"></div>
@@ -3048,6 +3124,7 @@ $('#b-menu').onclick = (demande) => {
     f.querySelector('#b-import').onclick = () => $('#f-import').click();
     f.querySelectorAll('[data-c]').forEach(b => b.onclick = () => ouvrirChantier(b.dataset.c));
     f.querySelectorAll('[data-p]').forEach(b => b.onclick = () => ouvrirPorte(b.dataset.p));
+    f.querySelectorAll('[data-qv]').forEach(b => b.onclick = () => { quiVentes = b.dataset.qv; try { localStorage.setItem(CLE + ':ventes-qui', quiVentes); } catch (e) {} $('#b-menu').onclick('ventes'); });
     f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
     const smsDuBouton = v => { const [id, type, rappel] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? trouverSms(p, type, !!rappel) : null; };
     f.querySelectorAll('[data-sms]').forEach(b => b.onclick = () => { const x = smsDuBouton(b.dataset.sms); if (x) { envoyerSms(x); $('#b-menu').onclick('jour'); } });
