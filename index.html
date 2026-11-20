@@ -301,6 +301,18 @@ body.secteurs .leaflet-marker-icon { pointer-events: none; }
 .objectif .jauge i.atteint { background: var(--st-r1); box-shadow: 0 0 0 2px rgba(46, 158, 92, .25); }
 .objectif .jauge em { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ardoise); border-radius: 1px; }
 .objectif b.ok { color: var(--st-r1); } .objectif b.retard { color: var(--st-stop); }
+.journee { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.journee .ligne-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.journee .ligne-btns .b2 { justify-content: center; text-align: center; padding: 8px 4px; font-size: 15px; min-width: 0; }
+.journee li { background: var(--surface); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.journee li.prochain { box-shadow: inset 0 0 0 2px var(--st-r1); }
+.journee li.passe { opacity: .55; }
+.journee .rdv-j { display: flex; gap: 12px; align-items: flex-start; }
+.journee .h-rdv { font: 700 20px/1 var(--f-titre); font-variant-numeric: tabular-nums; min-width: 58px; display: flex; flex-direction: column; gap: 3px; }
+.journee .h-rdv small { font: 600 12px/1 var(--f-texte); color: var(--doux); }
+.journee .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.journee .a { font-weight: 700; } .journee .m { color: var(--doux); font-size: 14px; }
+.journee .conseil { color: #d97a0f; font-size: 14px; font-weight: 600; }
 .barre { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--trait); gap: 2px; }
 .barre i { display: block; min-width: 4px; }
 .repartition { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; }
@@ -2900,6 +2912,66 @@ function afficherBilan(zone) {
 }
 function garderChoix() { try { localStorage.setItem(CLE + ':bilan', JSON.stringify(choixBilan)); } catch (e) {} }
 
+/* ───────── Ma journée : rendez-vous du jour dans l'ordre, avec Waze ───────── */
+let jourTournee = 'auj';
+const pointDe = p => !p.horsCarte && p.lat ? [p.lat, p.lng] : null;
+function lienWaze(p) {
+  const pt = pointDe(p);
+  if (pt) return `https://waze.com/ul?ll=${pt[0].toFixed(6)},${pt[1].toFixed(6)}&navigate=yes`;
+  const adr = adresseRdv(p); return adr ? `https://waze.com/ul?q=${encodeURIComponent(adr)}&navigate=yes` : '';
+}
+// Trajet estimé à vol d'oiseau × 1,35 : 30 km/h en ville, 60 km/h au-delà, + 5 min pour se garer
+function trajet(a, b) {
+  if (!a || !b) return null;
+  const km = metres(a, b) * 1.35 / 1000, min = Math.ceil((km < 5 ? km / 30 : 5 / 30 + (km - 5) / 60) * 60 / 5) * 5 + 5;
+  return { km, min };
+}
+function rdvDuJour(decalage) {
+  const j = new Date(); j.setDate(j.getDate() + decalage); const cle = jourCle(j), out = [];
+  for (const p of portes()) {
+    const et = etapeDe(p); if (et === 'perdu') continue;
+    if (p.r1 && p.r1.date && jourCle(dateR1(p.r1)) === cle) out.push({ p, type: 'R1', rdv: p.r1, debut: dateR1(p.r1) });
+    const r2 = rdvR2(p); if (r2 && jourCle(dateR1(r2)) === cle) out.push({ p, type: 'R2', rdv: r2, debut: dateR1(r2) });
+  }
+  out.sort((a, b) => a.debut - b.debut);
+  // Trajets : depuis le rendez-vous précédent (ou ma position pour le premier à venir)
+  let prec = null;
+  for (const x of out) {
+    x.fin = new Date(+x.debut + (x.rdv.duree || 60) * 60000);
+    x.passe = x.fin < new Date();
+    // Premier rendez-vous encore à venir aujourd'hui : depuis ma position ; sinon depuis le rendez-vous précédent
+    const surPlace = decalage === 0 && position && (!prec || prec.passe);
+    const depuis = x.passe ? null : surPlace ? [position.lat, position.lng] : prec ? pointDe(prec.p) : null;
+    x.trajet = trajet(depuis, pointDe(x.p)); x.depuisPrec = !surPlace && !!prec;
+    if (x.trajet) {
+      x.depart = new Date(+x.debut - x.trajet.min * 60000);
+      x.serre = x.depuisPrec && +prec.fin + x.trajet.min * 60000 > +x.debut;
+    }
+    prec = x;
+  }
+  return out;
+}
+function htmlJournee() {
+  const dec = jourTournee === 'dem' ? 1 : 0, l = rdvDuJour(dec);
+  const nbAuj = rdvDuJour(0).length, nbDem = rdvDuJour(1).length;
+  if (!nbAuj && !nbDem) return '';
+  let h = `<h3>Ma journée</h3><div class="puces">${[['auj', `Aujourd’hui (${nbAuj})`], ['dem', `Demain (${nbDem})`]].map(([k, t]) => `<button class="puce" data-jt="${k}" aria-pressed="${jourTournee === k}">${t}</button>`).join('')}</div>`;
+  if (!l.length) return h + `<p class="vide">Aucun rendez-vous ${dec ? 'demain' : 'aujourd’hui'}.</p>`;
+  const prochain = dec ? null : l.find(x => !x.passe);
+  h += `<ul class="journee">${l.map((x, i) => {
+    const waze = lienWaze(x.p), tel = telClient(x.p);
+    const tr = x.trajet ? `≈ ${distTxt(x.trajet.km * 1000)} · ${x.trajet.min} min ${x.depuisPrec ? 'depuis le précédent' : 'depuis ta position'}${x.passe ? '' : ` · partir vers ${heureTxt(x.depart.toISOString())}`}` : (pointDe(x.p) ? '' : 'Adresse à préciser pour estimer le trajet');
+    return `<li class="${x.passe ? 'passe' : ''}${x === prochain ? ' prochain' : ''}"><div class="rdv-j">
+      <span class="h-rdv">${esc(heureTxt(x.debut.toISOString()))}<small>${x.type}</small></span>
+      <span class="txt"><span class="a">${esc(nomClient(x.p) || 'Client sans nom')}</span>
+        <span class="m">${esc(adresseRdv(x.p) || court(x.p) || 'Adresse inconnue')}</span>
+        ${tr ? `<span class="m">${esc(tr)}</span>` : ''}
+        ${x.serre ? '<span class="conseil">Enchaînement serré avec le rendez-vous précédent</span>' : ''}</span></div>
+      <div class="ligne-btns">${waze ? `<a class="b2 ${x === prochain ? 'plein' : ''}" href="${esc(waze)}" target="_blank" rel="noopener">Waze</a>` : ''}${tel ? `<a class="b2" href="tel:${esc(tel.replace(/[^+\d]/g, ''))}">Appeler</a>` : ''}<button class="b2" data-prep="${x.p.id}">Préparer</button><button class="b2" data-p="${x.p.id}">Fiche</button></div></li>`;
+  }).join('')}</ul>`;
+  return h;
+}
+
 /* ───────── Ventes : devis en cours et signatures, au même endroit ───────── */
 // Objectif mensuel de chiffre signé, par commercial (synchronisé entre ses appareils)
 const objectifDe = qui => { const o = etat.objectifs && etat.objectifs[cleAdresse(qui)]; return o && o.montant > 0 ? o.montant : 0; };
@@ -3010,7 +3082,7 @@ function listesMenu() {
     const r = p.aRappeler, retard = r && r.date && dateRappel(r) < new Date();
     return item(p.id, 'rappel', r && r.date ? texteRappel(r) : 'Pas encore de date', [r && r.nom, court(p), r && r.tel].filter(Boolean).join(' · '), retard ? 'En retard : appelle-le' : '');
   }).join('')}</ul>`;
-  const rdv = rdvAVenir();
+  const rdv = rdvAVenir().filter(x => jourCle(x.quand) !== jourCle(new Date()));   // ceux du jour sont dans « Ma journée »
   if (rdv.length) h += `<h3>Rendez-vous à venir</h3><ul class="liste">${rdv.map(x => item(x.p.id, 'r1', `${x.type} · ${texteR1(x.rdv)}`, [nomClient(x.p), court(x.p)].filter(Boolean).join(' · ')).replace('data-p=', 'data-prep=')).join('')}</ul>`;
   const enCours = portes().filter(p => { const et = etapeDe(p); return (et === 'devis') || (et === 'r2' && !(rdvR2(p) && dateR1(rdvR2(p)) > new Date())) || (et === 'r1' && p.r1 && p.r1.date && dateR1(p.r1) < new Date()); })
     .sort((a, b) => ((suiviDe(a).slice(-1)[0] || {}).date || '') < ((suiviDe(b).slice(-1)[0] || {}).date || '') ? -1 : 1);
@@ -3041,6 +3113,7 @@ $('#b-menu').onclick = (demande) => {
     <div class="onglets" role="tablist">${Object.entries(ONGLETS).map(([k, t]) => `<button role="tab" data-onglet="${k}" aria-selected="${k === ongletMenu}">${t}${k === 'jour' && dus ? ` <span class="badge">${dus}</span>` : ''}</button>`).join('')}</div>
 
     <div class="pile" data-panneau="jour"${ongletMenu === 'jour' ? '' : ' hidden'}>
+      ${htmlJournee()}
       ${listes || '<p class="vide">Rien d’urgent : aucun rappel, rendez-vous ou projet en attente. Bonne prospection !</p>'}
       ${chantiers().length ? `<h3>Chantiers en cours</h3><ul class="liste">${chantiers().map(c => { const st = statsZone(c); return `<li><button data-c="${c.id}"><span class="txt"><span class="a">${esc(c.nom)}</span><span class="m">${st.total} porte${st.total > 1 ? 's' : ''} · ${st.r1} R1 · zone ${c.rayon} m</span></span></button></li>`; }).join('')}</ul>` : ''}
       <h3>Outils</h3>
@@ -3162,6 +3235,7 @@ $('#b-menu').onclick = (demande) => {
       z.querySelector('#obj-ok').onclick = () => { regleObjectif(lireMontant(z.querySelector('#obj-val').value)); $('#b-menu').onclick('ventes'); };
       const sup = z.querySelector('#obj-sup'); if (sup) sup.onclick = () => { regleObjectif(0); $('#b-menu').onclick('ventes'); };
     };
+    f.querySelectorAll('[data-jt]').forEach(b => b.onclick = () => { jourTournee = b.dataset.jt; $('#b-menu').onclick('jour'); });
     f.querySelectorAll('[data-qv]').forEach(b => b.onclick = () => { quiVentes = b.dataset.qv; try { localStorage.setItem(CLE + ':ventes-qui', quiVentes); } catch (e) {} $('#b-menu').onclick('ventes'); });
     f.querySelectorAll('[data-prep]').forEach(b => b.onclick = () => feuillePrep(etat.portes.find(x => x.id === b.dataset.prep)));
     const smsDuBouton = v => { const [id, type, rappel] = v.split('|'), p = etat.portes.find(x => x.id === id); return p ? trouverSms(p, type, !!rappel) : null; };
